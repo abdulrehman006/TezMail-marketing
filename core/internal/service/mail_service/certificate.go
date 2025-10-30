@@ -532,12 +532,12 @@ func (c *Certificate) getSSLInfoFromFiles(domain string) (certInfo v1.CertInfo, 
 
 	if !c.checkCertificateFiles(csrPath, keyPath) {
 		err = fmt.Errorf("certificate files do not exist")
-		return
+		return certInfo,err
 	}
 
 	crtPem, err := public.ReadFile(csrPath)
 	if err != nil {
-		return
+		return certInfo,err
 	}
 
 	// Get certificate information
@@ -547,7 +547,7 @@ func (c *Certificate) getSSLInfoFromFiles(domain string) (certInfo v1.CertInfo, 
 		certInfo.CertPem = crtPem
 		certInfo.KeyPem, err = public.ReadFile(keyPath)
 		if err != nil {
-			return
+			return certInfo,err
 		}
 	}
 
