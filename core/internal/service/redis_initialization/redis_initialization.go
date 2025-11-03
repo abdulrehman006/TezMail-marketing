@@ -1,4 +1,3 @@
-package blueprints
 package redis_initialization
 
 import (
