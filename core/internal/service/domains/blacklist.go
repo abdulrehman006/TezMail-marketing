@@ -2,6 +2,7 @@ package domains
 
 import (
 	"billionmail-core/internal/model"
+	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/public"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gfile"
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/miekg/dns"
@@ -185,6 +187,61 @@ var (
 	DOMAIN_SCAN_LOG_PATH = public.AbsPath("../core/data")
 )
 
+// The blacklist for detecting scheduled task invocations
+func CheckDomainsBlacklist(ctx context.Context) {
+
+	var autoScanEnabled bool
+	err := public.OptionsMgrInstance.GetOption(ctx, "blacklist_auto_scan_enabled", &autoScanEnabled)
+	if err != nil {
+		autoScanEnabled = true
+	}
+	if !autoScanEnabled {
+		return
+	}
+
+	domains, err := All(ctx)
+	if err != nil {
+		return
+	}
+
+	if len(domains) == 0 {
+		return
+	}
+
+	var waitDuration time.Duration
+	if len(domains) <= 8 {
+		waitDuration = 3 * time.Hour
+	} else {
+		hoursPerDomain := 24.0 / float64(len(domains))
+		waitDuration = time.Duration(hoursPerDomain * float64(time.Hour))
+	}
+
+	for i, domain := range domains {
+
+		if domain.ARecord == "" {
+			continue
+		}
+
+		ip, err := ResolveA(domain.ARecord, nil)
+		if err != nil {
+			//g.Log().Errorf(ctx, "Failed to parse the A record of domain name %s: %v. Skipping the check.", domain.ARecord, err)
+			continue
+		}
+
+		_, err = IsDomainBlacklisted(ctx, ip, domain.ARecord, nil)
+		if err != nil {
+			continue
+		}
+
+		if i < len(domains)-1 {
+			//g.Log().Infof(ctx, "Wait for %.0f minutes and then check the next domain name...", waitDuration.Minutes())
+			time.Sleep(waitDuration)
+		}
+	}
+
+	//g.Log().Infof(ctx, "The blacklist check task has been completed. A total of %d domain names were checked.", len(domains))
+}
+
 // IsDomainBlacklisted
 func IsDomainBlacklisted(ctx context.Context, ip, domain string, dns_servers []string) (*model.BlacklistCheckResult, error) {
 	result := &model.BlacklistCheckResult{
@@ -267,24 +324,11 @@ func IsDomainBlacklisted(ctx context.Context, ip, domain string, dns_servers []s
 
 	addBlacklist(domain, result)
 
-	//// 有黑名单,检查告警并推送
-	//if result.Blacklisted > 0 {
-	//	args := &public.SendMailDataArgs{
-	//		Keyword: "mail_domain_black",
-	//		Domain:  domain,
-	//	}
-	//	var blacklists []string
-	//	for _, b := range result.BlackList {
-	//		blacklists = append(blacklists, b.Blacklist)
-	//	}
-	//	body := []string{
-	//		fmt.Sprintf(">Send content: Your IP [%s] is on the email blacklist.", ip),
-	//		fmt.Sprintf(">Results for %s.", domain),
-	//		fmt.Sprintf(">Blacklisted: %v.", blacklists),
-	//	}
-	//	args.Body = body
-	//	public.SendMailData(ctx, args)
-	//}
+	// Check the alerts and push them
+	if result.Blacklisted > 0 {
+
+		go sendBlacklistAlert(ctx, ip, domain, result)
+	}
 
 	return result, nil
 }
@@ -368,4 +412,217 @@ func GetBlacklistResult(domain string) *model.BlacklistCheckResult {
 func GetBlacklistLogPath(domain string) string {
 	logPath := fmt.Sprintf("%s/%s_blcheck.txt", DOMAIN_SCAN_LOG_PATH, domain)
 	return logPath
+}
+
+func sendBlacklistAlert(ctx context.Context, ip, domain string, result *model.BlacklistCheckResult) {
+
+	var alertEnabled bool
+	err := public.OptionsMgrInstance.GetOption(ctx, "blacklist_alert_enabled", &alertEnabled)
+	if err != nil || !alertEnabled {
+		//g.Log().Infof(ctx, "Blacklist alert is disabled, skipping alert for domain: %s", domain)
+		return
+	}
+
+	alertSettings, err := loadBlacklistAlertSettingsForAlert()
+	if err != nil || alertSettings == nil {
+		g.Log().Errorf(ctx, "Failed to load alert settings, skipping alert for domain: %s, error: %v", domain, err)
+		return
+	}
+
+	if alertSettings.SenderEmail == "" || alertSettings.SMTPServer == "" || len(alertSettings.RecipientList) == 0 {
+		g.Log().Errorf(ctx, "Alert settings incomplete, skipping alert for domain: %s", domain)
+		return
+	}
+
+	subject := fmt.Sprintf("⚠️ Blacklist Alert - %s", domain)
+	body := buildBlacklistAlertEmailHTML(ip, domain, result)
+
+	err = sendAlertEmail(ctx, alertSettings, subject, body)
+	if err != nil {
+		g.Log().Errorf(ctx, "Failed to send blacklist alert for domain: %s, error: %v", domain, err)
+		return
+	}
+
+	g.Log().Infof(ctx, "✅ Blacklist alert sent successfully for domain: %s to %d recipients", domain, len(alertSettings.RecipientList))
+}
+
+type BlacklistAlertSettings struct {
+	Name          string   `json:"name"`
+	SenderEmail   string   `json:"sender_email"`
+	SMTPPassword  string   `json:"smtp_password"`
+	SMTPServer    string   `json:"smtp_server"`
+	SMTPPort      int      `json:"smtp_port"`
+	RecipientList []string `json:"recipient_list"`
+}
+
+func loadBlacklistAlertSettingsForAlert() (*BlacklistAlertSettings, error) {
+	alertSettingsFile := public.AbsPath("../core/data/blacklist_alert_settings.json")
+
+	if !gfile.Exists(alertSettingsFile) {
+		return nil, fmt.Errorf("alert settings file not found")
+	}
+
+	content := gfile.GetContents(alertSettingsFile)
+	if content == "" {
+		return nil, fmt.Errorf("alert settings file is empty")
+	}
+
+	var settings BlacklistAlertSettings
+	err := json.Unmarshal([]byte(content), &settings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse alert settings: %v", err)
+	}
+
+	return &settings, nil
+}
+
+func sendAlertEmail(ctx context.Context, settings *BlacklistAlertSettings, subject, body string) error {
+
+	sender := mail_service.NewEmailSender()
+	sender.Host = settings.SMTPServer
+	sender.Port = fmt.Sprintf("%d", settings.SMTPPort)
+	sender.Email = settings.SenderEmail
+	sender.UserName = settings.SenderEmail
+	sender.Password = settings.SMTPPassword
+
+	err := sender.Connect()
+	if err != nil {
+		return fmt.Errorf("failed to connect to SMTP server: %v", err)
+	}
+	defer sender.Close()
+
+	var failedRecipients []string
+	for _, recipient := range settings.RecipientList {
+
+		message := mail_service.NewMessage(subject, body)
+		message.SetRealName(settings.Name)
+		messageId := sender.GenerateMessageID()
+		message.SetMessageID(messageId)
+
+		err = sender.Send(message, []string{recipient})
+		if err != nil {
+			g.Log().Errorf(ctx, "Failed to send alert email to %s: %v", recipient, err)
+			failedRecipients = append(failedRecipients, recipient)
+		} else {
+			g.Log().Infof(ctx, "Alert email sent successfully to %s", recipient)
+		}
+	}
+
+	if len(failedRecipients) > 0 {
+		return fmt.Errorf("failed to send alert email to %d recipient(s): %v", len(failedRecipients), failedRecipients)
+	}
+
+	return nil
+}
+
+func buildBlacklistAlertEmailHTML(ip, domain string, result *model.BlacklistCheckResult) string {
+
+	var blacklistItems string
+	for i, bl := range result.BlackList {
+		blacklistItems += fmt.Sprintf("                <li><strong>%d. %s</strong> (Response: %s)</li>\n",
+			i+1, bl.Blacklist, bl.Response)
+	}
+
+	return fmt.Sprintf(`
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #f44336; color: white; padding: 15px 20px; border-radius: 5px; }
+        .content { padding: 20px; background: #fff3cd; border-radius: 5px; margin-top: 20px; border: 2px solid #f44336; }
+        .alert-box { background: #ffebee; padding: 15px; border-left: 4px solid #f44336; margin: 15px 0; }
+        .info-table { width: 100%%; border-collapse: collapse; margin: 15px 0; }
+        .info-table td { padding: 8px; border-bottom: 1px solid #ddd; }
+        .info-table td:first-child { font-weight: bold; width: 150px; }
+        .blacklist-list { background: #fff; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .blacklist-list ul { list-style: none; padding-left: 0; }
+        .blacklist-list li { padding: 5px 0; color: #d32f2f; }
+        .footer { margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #777; }
+        .warning { color: #f44336; font-weight: bold; font-size: 18px; }
+        .action-needed { background: #f44336; color: white; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>⚠️ Blacklist Alert - Action Required</h2>
+        </div>
+        <div class="content">
+            <div class="alert-box">
+                <p class="warning">⚠️ Your domain has been detected on email blacklists!</p>
+                <p>Immediate action is required to prevent email delivery issues.</p>
+            </div>
+
+            <h3>Domain Information</h3>
+            <table class="info-table">
+                <tr>
+                    <td>Domain:</td>
+                    <td><strong>%s</strong></td>
+                </tr>
+                <tr>
+                    <td>IP Address:</td>
+                    <td><strong>%s</strong></td>
+                </tr>
+                <tr>
+                    <td>Detection Time:</td>
+                    <td>%s</td>
+                </tr>
+            </table>
+
+            <h3>Check Results</h3>
+            <table class="info-table">
+                <tr>
+                    <td>Total Tested:</td>
+                    <td>%d blacklists</td>
+                </tr>
+                <tr>
+                    <td>Passed:</td>
+                    <td style="color: green;">%d ✓</td>
+                </tr>
+                <tr>
+                    <td>Invalid:</td>
+                    <td>%d</td>
+                </tr>
+                <tr>
+                    <td>Blacklisted:</td>
+                    <td style="color: red; font-weight: bold;">%d ✗</td>
+                </tr>
+            </table>
+
+            <div class="blacklist-list">
+                <h3>Blacklisted On:</h3>
+                <ul>
+%s
+                </ul>
+            </div>
+
+            <div class="action-needed">
+                <strong>Action Needed:</strong> Please investigate and resolve these blacklist issues immediately.
+            </div>
+
+            <h3>Recommended Actions:</h3>
+            <ol>
+                <li>Check recent email sending activities</li>
+                <li>Review server security and spam policies</li>
+                <li>Submit delisting requests to affected blacklists</li>
+                <li>Monitor email delivery rates</li>
+                <li>Contact support if assistance is needed</li>
+            </ol>
+
+            <p><strong>View detailed log:</strong> <code>%s</code></p>
+        </div>
+        <div class="footer">
+            <p>This is an automated alert from BillionMail Blacklist Monitoring System.</p>
+            <p>Alert Time: %s</p>
+            <p>If you have resolved this issue, you can ignore this alert.</p>
+        </div>
+    </div>
+</body>
+</html>
+`, domain, ip, time.Unix(result.Time, 0).Format("2006-01-02 15:04:05"),
+		result.Tested, result.Passed, result.Invalid, result.Blacklisted,
+		blacklistItems,
+		GetBlacklistLogPath(domain),
+		time.Now().Format("2006-01-02 15:04:05"))
 }

@@ -183,6 +183,11 @@ func Start(ctx context.Context) (err error) {
 		relay.EnsurePostfixConfExists(ctx)
 	})
 
+	// Check the domain name blacklist
+	gtimer.Add(30*time.Minute, func() {
+		domains.CheckDomainsBlacklist(ctx)
+	})
+
 	g.Log().Debug(ctx, "All timers started successfully")
 	return nil
 }

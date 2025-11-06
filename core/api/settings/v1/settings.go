@@ -2,6 +2,7 @@ package v1
 
 import (
 	"billionmail-core/utility/types/api_v1"
+
 	"github.com/gogf/gf/v2/frame/g"
 )
 
@@ -93,6 +94,24 @@ type SystemConfig struct {
 		APIDocEnabled bool   `json:"api_doc_enabled" dc:"enable API documentation and Swagger UI"`
 		APIToken      string `json:"api_token" dc:"API access token"`
 	} `json:"api_doc_swagger" dc:"API doc and Swagger UI configuration"`
+
+	// blacklist config
+	BlacklistConfig BlacklistConfig `json:"blacklist_config" dc:"blacklist configuration"`
+}
+
+type BlacklistConfig struct {
+	AutoScanEnabled bool                    `json:"auto_scan_enabled" dc:"Automatic scanning switch"`
+	AlertEnabled    bool                    `json:"alert_enabled" dc:"Alarm switch"`
+	AlertSettings   *BlacklistAlertSettings `json:"alert_settings" dc:"Alarm settings"`
+}
+
+type BlacklistAlertSettings struct {
+	Name          string   `json:"name" dc:"Alarm sender's name"`
+	SenderEmail   string   `json:"sender_email" dc:"sender email" v:"required|email"`
+	SMTPPassword  string   `json:"smtp_password" dc:"SMTP password" v:"required"`
+	SMTPServer    string   `json:"smtp_server" dc:"SMTP server" v:"required"`
+	SMTPPort      int      `json:"smtp_port" dc:"SMTP port" v:"required|between:1,65535" d:"587"`
+	RecipientList []string `json:"recipient_list" dc:"recipient list" v:"required"`
 }
 
 type GetVersionReq struct {
@@ -229,12 +248,42 @@ type RegenerateAPITokenRes struct {
 	} `json:"data" dc:"Generated API Token"`
 }
 
-// 设置api文档和Swagger的开启状态
+// Set the status of the API documentation and Swagger
 type SetAPIDocSwaggerReq struct {
 	g.Meta        `path:"/settings/set_api_doc_swagger" tags:"Settings" method:"post" summary:"Set API Doc and Swagger UI configuration"`
 	Authorization string `json:"authorization" in:"header" dc:"Authorization" v:"required"`
 	APIDocEnabled bool   `json:"api_doc_enabled" dc:"Enable API documentation and Swagger UI"`
 }
 type SetAPIDocSwaggerRes struct {
+	api_v1.StandardRes
+}
+
+type SetBlacklistAutoScanReq struct {
+	g.Meta        `path:"/settings/set_blacklist_auto_scan" tags:"Settings" method:"post" summary:"Set blacklist auto scan switch"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Enabled       bool   `json:"enabled" dc:"Automatic scanning switch" v:"required"`
+}
+
+type SetBlacklistAutoScanRes struct {
+	api_v1.StandardRes
+}
+
+type SetBlacklistAlertReq struct {
+	g.Meta        `path:"/settings/set_blacklist_alert" tags:"Settings" method:"post" summary:"Set blacklist alert switch"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Enabled       bool   `json:"enabled" dc:"Blacklist alarm switch" v:"required"`
+}
+
+type SetBlacklistAlertRes struct {
+	api_v1.StandardRes
+}
+
+type SetBlacklistAlertSettingsReq struct {
+	g.Meta        `path:"/settings/set_blacklist_alert_settings" tags:"Settings" method:"post" summary:"Set blacklist alert settings"`
+	Authorization string                 `json:"authorization" dc:"Authorization" in:"header"`
+	Settings      BlacklistAlertSettings `json:"settings" dc:"Alarm settings" v:"required"`
+}
+
+type SetBlacklistAlertSettingsRes struct {
 	api_v1.StandardRes
 }
