@@ -49,6 +49,9 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 	}
 	if req.Warmup == 0 || req.Warmup == 1 {
 		updateData["warmup"] = req.Warmup
+    }
+	if req.WarmupDelay > 0 {
+		updateData["warmup_delay"] = req.WarmupDelay
 	}
 
 	if req.Addresser != "" {

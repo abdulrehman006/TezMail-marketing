@@ -150,7 +150,8 @@ type CreateTaskReq struct {
 	TrackOpen     int    `json:"track_open" v:"in:0,1" dc:"track open" default:"1"`
 	TrackClick    int    `json:"track_click" v:"in:0,1" dc:"track click" default:"1"`
 	StartTime     int    `json:"start_time" v:"required" dc:"start time"`
-	Warmup        int    `json:"warmup" v:"in:0,1" dc:"warmup" default:"0"`
+	Warmup        int     `json:"warmup" v:"in:0,1" dc:"warmup" default:"0"`
+	WarmupDelay   float64 `json:"warmup_delay" v:"min:0.1|max:60" dc:"warmup delay in minutes" default:"1"`
 	Remark        string `json:"remark" dc:"remark"`
 
 	TagIds   []int  `json:"tag_ids" dc:"tag ids for filtering contacts"`
@@ -276,7 +277,8 @@ type UpdateTaskInfoReq struct {
 	Remark        string `json:"remark" dc:"remark"`
 	TemplateId    int    `json:"template_id" dc:"template id"`
 	Unsubscribe   int    `json:"unsubscribe" v:"in:0,1" dc:"unsubscribe"`
-	Warmup        int    `json:"warmup" v:"in:0,1" dc:"warmup"`
+	Warmup        int     `json:"warmup" v:"in:0,1" dc:"warmup"`
+	WarmupDelay   float64 `json:"warmup_delay" v:"min:0|max:60" dc:"warmup delay in minutes"`
 	Threads       int    `json:"threads" v:"min:0" dc:"threads"`
 	StartTime     int    `json:"start_time" dc:"start time"`
 	TagIds        []int  `json:"tag_ids" dc:"tag ids for filtering contacts"`

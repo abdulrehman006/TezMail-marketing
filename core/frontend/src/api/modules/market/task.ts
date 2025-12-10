@@ -35,6 +35,7 @@ interface TaskAddParams {
 	template_id: number
 	is_record: number
 	warmup: number
+	warmup_delay: number
 	unsubscribe: number
 	threads: number
 	start_time: number
