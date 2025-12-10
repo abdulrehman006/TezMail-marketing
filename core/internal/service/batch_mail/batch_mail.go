@@ -37,8 +37,8 @@ type CreateTaskArgs struct {
 	//Etypes      string `json:"etypes"`      // Email types (e.g., group IDs)
 	Remark    string `json:"remark"`     // Task remark
 	StartTime int    `json:"start_time"` // Scheduled start time
-	Warmup      int     `json:"warmup"`       // Warmup campaign association
-	WarmupDelay float64 `json:"warmup_delay"` // Warmup delay in minutes
+	Warmup      int `json:"warmup"`       // Warmup campaign association
+	WarmupDelay int `json:"warmup_delay"` // Warmup delay in seconds
 	AddType   int    `json:"add_type"`   // Add type (0: normal)
 	GroupId   int    `json:"group_id"`   // Groups to unsubscribe from
 	TagIds    []int  `json:"tag_ids"`    // Tag IDs for filtering contacts

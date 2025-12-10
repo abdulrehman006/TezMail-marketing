@@ -91,10 +91,10 @@
 							<n-form-item v-if="form.warmup === 1" :label="t('market.task.edit.warmupDelay')">
 								<n-input-number
 									v-model:value="form.warmup_delay"
-									:min="0.1"
-									:max="60"
-									:step="0.5"
-									:precision="1"
+									:min="1"
+									:max="3600"
+									:step="1"
+									:precision="0"
 									style="width: 150px">
 									<template #suffix>
 										{{ t('market.task.edit.warmupDelayUnit') }}
@@ -246,7 +246,7 @@ const form = reactive({
 	is_record: 1,
 	unsubscribe: 1,
 	warmup: 0,
-	warmup_delay: 1,
+	warmup_delay: 60,
 	threads: 0,
 	start_time: null as number | null,
 	remark: '',
@@ -424,7 +424,7 @@ const getParams = () => {
 		is_record: form.is_record,
 		unsubscribe: form.unsubscribe,
 		warmup: form.warmup,
-		warmup_delay: form.warmup_delay || 1,
+		warmup_delay: form.warmup_delay || 60,
 		threads: form.threads,
 		start_time: startTime / 1000,
 		remark: form.remark,
@@ -482,7 +482,7 @@ const initForm = async () => {
 		form.is_record = res.is_record
 		form.unsubscribe = res.unsubscribe
 		form.warmup = res.warmup || 0
-		form.warmup_delay = res.warmup_delay || 1
+		form.warmup_delay = res.warmup_delay || 60
 		form.threads = res.threads
 		threadsType.value = res.threads === 0 ? 0 : 1
 		form.remark = res.remark

@@ -260,10 +260,10 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 
 	e.ctx = context.WithValue(e.ctx, "warmupAssociated", warmupAssociated)
 
-	// Store warmup delay from task (default 1 minute)
+	// Store warmup delay from task (default 60 seconds)
 	warmupDelay := task.WarmupDelay
 	if warmupDelay <= 0 {
-		warmupDelay = 1.0
+		warmupDelay = 60
 	}
 	e.ctx = context.WithValue(e.ctx, "warmupDelay", warmupDelay)
 
@@ -812,14 +812,13 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
                                         break // Token acquired, proceed with sending
                                 }
                                 
-                                // Calculate wait duration using warmupDelay from task
-                                warmupDelayMinutes := float64(1.0)
-                                if delay, ok := e.ctx.Value("warmupDelay").(float64); ok && delay > 0 {
-                                        warmupDelayMinutes = delay
+                                // Calculate wait duration using warmupDelay from task (already in seconds)
+                                warmupDelaySeconds := 60
+                                if delay, ok := e.ctx.Value("warmupDelay").(int); ok && delay > 0 {
+                                        warmupDelaySeconds = delay
                                 }
-                                warmupDelaySeconds := warmupDelayMinutes * 60
                                 waitDuration := time.Duration(waits) * time.Second
-                                minWait := time.Duration(warmupDelaySeconds*0.5) * time.Second
+                                minWait := time.Duration(float64(warmupDelaySeconds)*0.5) * time.Second
                                 maxWait := time.Duration(warmupDelaySeconds) * time.Second
                                 if waitDuration < minWait {
                                         waitDuration = minWait

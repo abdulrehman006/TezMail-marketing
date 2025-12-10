@@ -256,7 +256,7 @@ func init() {
 		_ = AddColumnIfNotExists("email_tasks", "group_id", "INTEGER", "0", true)
 		_ = AddColumnIfNotExists("email_tasks", "tag_ids", "TEXT", "''", false)
 		_ = AddColumnIfNotExists("email_tasks", "tag_logic", "VARCHAR(10)", "'AND'", false)
-		_ = AddColumnIfNotExists("email_tasks", "warmup_delay", "DECIMAL(5,2)", "1.0", true) // Warmup delay in minutes (default 1 minute)
+		_ = AddColumnIfNotExists("email_tasks", "warmup_delay", "INTEGER", "60", true) // Warmup delay in seconds (default 60 seconds)
 
 		// unsubscribe_records
 		_ = DropForeignKeyIfExists("unsubscribe_records", "group_id")
