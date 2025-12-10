@@ -1,0 +1,189 @@
+Return-Path: <>
+Delivered-To: abuse@email.tez.host
+Received: from email.tez.host ([172.66.1.7])
+	by dovecot with LMTP
+	id g+vpFmWsMGksAwAAkzG9Ng
+	(envelope-from <>)
+	for <abuse@email.tez.host>; Wed, 03 Dec 2025 21:32:21 +0000
+Received: by email.tez.host (PostBillionMail)
+	id 4E37BBC2CF; Wed,  3 Dec 2025 21:32:21 +0000 (UTC)
+Date: Wed,  3 Dec 2025 21:32:21 +0000 (UTC)
+From: Mail Delivery System <MAILER-DAEMON@email.tez.host>
+Subject: Undelivered Mail Returned to Sender
+To: abuse@email.tez.host
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="EBD24BC2CA.1764797541/email.tez.host"
+Content-Transfer-Encoding: 8bit
+Message-Id: <20251203213221.4E37BBC2CF@email.tez.host>
+
+This is a MIME-encapsulated message.
+
+--EBD24BC2CA.1764797541/email.tez.host
+Content-Description: Notification
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This is the mail system at host email.tez.host.
+
+I'm sorry to have to inform you that your message could not
+be delivered to one or more recipients. It's attached below.
+
+For further assistance, please send mail to postmaster.
+
+If you do so, please include this problem report. You can
+delete your own text from the attached returned message.
+
+                   The mail system
+
+<asad@tezhost.com>: host email-smtp.us-east-1.amazonaws.com[54.157.237.25]
+    said: 554 Message rejected: Email address is not verified. The following
+    identities failed the check in region US-EAST-1: abuse
+    <abuse@email.tez.host>, abuse@email.tez.host (in reply to end of DATA
+    command)
+
+--EBD24BC2CA.1764797541/email.tez.host
+Content-Description: Delivery report
+Content-Type: message/global-delivery-status
+Content-Transfer-Encoding: 8bit
+
+Reporting-MTA: dns; email.tez.host
+X-PostBillionMail-Queue-ID: EBD24BC2CA
+X-PostBillionMail-Sender: rfc822; abuse@email.tez.host
+Arrival-Date: Wed,  3 Dec 2025 21:32:18 +0000 (UTC)
+
+Final-Recipient: rfc822; asad@tezhost.com
+Original-Recipient: rfc822;asad@tezhost.com
+Action: failed
+Status: 5.0.0
+Remote-MTA: dns; email-smtp.us-east-1.amazonaws.com
+Diagnostic-Code: smtp; 554 Message rejected: Email address is not verified. The
+    following identities failed the check in region US-EAST-1: abuse
+    <abuse@email.tez.host>, abuse@email.tez.host
+
+--EBD24BC2CA.1764797541/email.tez.host
+Content-Description: Undelivered Message
+Content-Type: message/global
+Content-Transfer-Encoding: 8bit
+
+Return-Path: <abuse@email.tez.host>
+Received: from localhost (billionmail-core-billionmail-1.billionmail_billionmail-network [172.66.1.4])
+	(Authenticated sender: abuse@email.tez.host)
+	by email.tez.host (PostBillionMail) with UTF8SMTPA id EBD24BC2CA
+	for <asad@tezhost.com>; Wed,  3 Dec 2025 21:32:18 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=email.tez.host;
+	s=default; t=1764797539;
+	h=from:subject:date:message-id:to:mime-version:content-type:
+	 content-transfer-encoding; bh=IPfx0bjtXYk6c4ckmwKwCp4skqQibK1BT1d5LytYIMo=;
+	b=LgM/ih3aDHSoTr7yR2mQ3Df5Ir5oeFltZRj8Mvll3vNydhXdMFAznqFvmoE/wLtxL6sfwX
+	P9VITg6dUZecy7XbOxpYit2NfZQW4Gi5/puVmPTc5hpDPbvvTnojjPyYM4UpcI0PiV+jmO
+	z27EOH4zJ2j3jDbzin+Lq7PwlqrDPj1rWOgyzuzuFPnIqp5Yfu31k8jU4m+YxhFLX0kFL7
+	0MEOGtruNbQvWYIEQnTN6xUuaP9QS1/66qOzPLmjFD4eKiB12FGsxGOvuv7/NgaRozbFzH
+	6E9C2Pk1Mx+9qgJGejUgsfjb0H3+TgELzmy4R0lPpvQTPWH8z0HOFhlQwjzfyg==
+From: abuse <abuse@email.tez.host>
+To: asad@tezhost.com
+Subject: test
+MIME-Version: 1.0
+Content-Transfer-Encoding: quoted-printable
+X-Mailer: BillionMail
+Message-ID: <1764797538487.afcc046f491d5a70640a8806e3a3aa9a@email.tez.host>
+Date: Wed, 03 Dec 2025 21:32:18 +0000
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html lang=3D"en" style=3D"margin:0; padding:0;">
+<head>
+  <meta charset=3D"UTF-8" />
+  <meta name=3D"viewport" content=3D"width=3Ddevice-width, initial-scale=3D=
+1.0" />
+  <title>TezHost Email</title>
+  <style>
+    body {
+      margin:0;
+      padding:0;
+      background-color:#f4f4f4;
+      font-family:Arial, sans-serif;
+    }
+    .container {
+      max-width:600px;
+      margin:40px auto;
+      background:#ffffff;
+      border-radius:8px;
+      overflow:hidden;
+      box-shadow:0 2px 6px rgba(0,0,0,0.1);
+    }
+    .header {
+      background:#0a7cff;
+      color:#ffffff;
+      padding:20px;
+      text-align:center;
+      font-size:22px;
+      font-weight:bold;
+    }
+    .content {
+      padding:25px;
+      color:#333333;
+      line-height:1.6;
+      font-size:16px;
+    }
+    .footer {
+      text-align:center;
+      padding:18px;
+      font-size:13px;
+      color:#777777;
+      background:#fafafa;
+    }
+    .button {
+      display:inline-block;
+      margin-top:20px;
+      padding:12px 22px;
+      background:#0a7cff;
+      color:#ffffff;
+      text-decoration:none;
+      font-size:15px;
+      border-radius:5px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class=3D"container">
+    <div class=3D"header">
+      Welcome to TezHost
+    </div>
+
+    <div class=3D"content">
+      <p>Hello,</p>
+
+      <p>Welcome to TezHost=E2=80=99s email marketing channel. We are happy=
+ to share that we are launching our new email service at TezHost.</p>
+
+      <p>This message has been sent to you **only for testing purposes** as=
+ we configure and optimize our system.</p>
+
+      <p>I hope you will not mind receiving this test email, and we would a=
+ppreciate it if you could please acknowledge that you have received it.</p>
+
+      <p>Thank you for your support.</p>
+
+      <a href=3D"#" class=3D"button">Acknowledge Receipt</a>
+    </div>
+
+    <div class=3D"footer">
+      =C2=A9 2025 TezHost. All rights reserved. =20
+      <br />If you received this email by mistake, please ignore it.
+    </div>
+  </div>
+<div style=3D"padding: 16px 0; text-align: center"><a href=3D"https://mail.=
+email.tez.host/unsubscribe.html?jwt=3DeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.=
+eyJlbWFpbCI6ImFzYWRAdGV6aG9zdC5jb20iLCJ0ZW1wbGF0ZV9pZCI6MywidGFza19pZCI6MCw=
+iZ3JvdXBfaWQiOjAsImV4cCI6MTc2NzM4OTUzOCwiaWF0IjoxNzY0Nzk3NTM4fQ.FnWvi1XLFgl=
+80VwLfpazvAM_wIdinkwBW7-n9M4Sa1U&email=3Dasad@tezhost.com&url_type=3Dhttps:=
+//mail.email.tez.host/api/unsubscribe/user_group&url_unsubscribe=3Dhttps://=
+mail.email.tez.host/api/unsubscribe" style=3D"color: #ccc; font-size: 12px"=
+>Unsubscribe</a></div></body>
+</html>
+
+
+--EBD24BC2CA.1764797541/email.tez.host--

@@ -1,0 +1,6 @@
+user = billionmail
+password = PW1sHKFD5i0ArO4xVWn9a2IQ6liw6kAq
+hosts = pgsql
+dbname = billionmail
+
+query = SELECT CONCAT('[', rc.relay_host, ']:', rc.relay_port) FROM bm_relay_config rc JOIN bm_relay_domain_mapping rdm ON rc.id = rdm.relay_id WHERE rdm.sender_domain = REPLACE('%s', '@', '') AND rc.active = 1 LIMIT 1

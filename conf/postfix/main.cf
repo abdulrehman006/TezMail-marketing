@@ -19,7 +19,12 @@ readme_directory = no
 
 # See http://www.postfix.org/COMPATIBILITY_README.html -- default to 3.6 on
 # fresh installs.
-compatibility_level = 3.6
+compatibility_level = 3.7
+mail_name = PostBillionMail
+
+smtp_header_checks = pcre:/etc/postfix/conf/header_checks
+lmtp_header_checks = pcre:/etc/postfix/conf/header_checks
+
 
 
 # TLS parameters
@@ -29,7 +34,7 @@ tls_server_sni_maps = hash:/etc/postfix/conf/vmail_ssl.map
 smtpd_tls_security_level=may
 
 smtp_tls_CApath=/etc/ssl/certs
-smtp_tls_security_level=may
+#smtp_tls_security_level=may
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 
 
@@ -69,4 +74,32 @@ message_size_limit = 102400000
 
 ## Do not add configurations to the following configurations and will be deleted
 ## Do not delete the following identification configuration
+# AWS SES Relay Configuration
+
 # Overrides-configuration #
+
+
+# User Overrides-configuration
+# BEGIN RELAY SERVICE CONFIGURATION - DO NOT EDIT THIS MARKER
+sender_dependent_relayhost_maps = hash:/etc/postfix/conf/sender_relay_maps_primary, pgsql:/etc/postfix/sql/pgsql_sender_relay_maps.cf
+smtp_sasl_password_maps = hash:/etc/postfix/conf/sasl_passwd_primary, hash:/etc/postfix/conf/sasl_passwd
+sender_dependent_default_transport_maps = pgsql:/etc/postfix/sql/pgsql_sender_transport_maps.cf
+smtp_sasl_auth_enable = yes
+smtp_sasl_security_options = noanonymous
+smtp_tls_security_level = encrypt
+smtp_use_tls = yes
+# END RELAY SERVICE CONFIGURATION - DO NOT EDIT THIS MARKER
+
+myhostname = email.tez.host
+
+maximal_queue_lifetime = 5d
+
+minimal_backoff_time = 300s
+
+queue_run_delay = 300s
+
+trigger_timeout = 10s
+
+bounce_queue_lifetime = 5d
+
+maximal_backoff_time = 4000s

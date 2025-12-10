@@ -1,0 +1,43 @@
+"use strict";(self.webpackChunkfrontend=self.webpackChunkfrontend||[]).push([["4223"],{18007(e,t,n){n.r(t),n.d(t,{default:()=>b});var a=n(62408),i=n(27546),l=n(76628),r=n(60801),s=n(45449),o=n(90290),d=n(82806),c=n(40528),u=n(12532),p=n(24123),v=n(3401),f=n(75220);let h={class:"login-container"},m={class:"login-card"},g=["src","title","alt"],y=(0,o.pM)({__name:"index",setup(e){let{t}=(0,v.s9)(),n=(0,f.rd)(),y=(0,c.kH)(),b=(0,o.rk)("formRef"),k=(0,o.KR)(!1),w=(0,o.KR)(""),R=(0,o.KR)(!1),A=(0,o.Kh)({username:"",password:"",validate_code:"",validate_code_id:""}),_={username:{required:!0,message:t("login.validation.usernameRequired"),trigger:["blur","input"]},password:{required:!0,message:t("login.validation.passwordRequired"),trigger:["blur","input"]},validate_code:{required:!0,trigger:["blur","input"],message:t("login.validation.captchaRequired")}},C=async()=>{try{R.value=!0;let e=await (0,p.uY)();(0,u.Gv)(e)&&(k.value=e.mustValidateCode,e.mustValidateCode&&(w.value=e.validateCodeBase64,A.validate_code_id=e.validateCodeId))}finally{R.value=!1}},z=(0,o.KR)(!1),x=async()=>{try{var e;await (null==(e=b.value)?void 0:e.validate()),z.value=!0;let t=await (0,p.iD)((0,o.ux)(A));(0,u.Gv)(t)&&(y.setLoginInfo({token:t.token,refresh_token:t.refresh_token,ttl:t.ttl}),setTimeout(()=>{n.push("/")},1e3))}catch{C()}finally{z.value=!1}};return C(),(e,n)=>{let c=s.A,u=r.Ay,p=l.A,v=i.Ay,f=a.A;return(0,o.uX)(),(0,o.CE)("div",h,[(0,o.Lk)("div",m,[n[4]||(n[4]=(0,o.Lk)("div",{class:"logo-container"},[(0,o.Lk)("div",{class:"logo"},[(0,o.Lk)("img",{class:"w-full",src:d})])],-1)),n[5]||(n[5]=(0,o.Lk)("h2",{class:"login-title"},"BillionMail",-1)),(0,o.bF)(f,{ref_key:"formRef",ref:b,size:"large",model:(0,o.R1)(A),rules:_},{default:(0,o.k6)(()=>[(0,o.bF)(u,{"show-label":!1,path:"username"},{default:(0,o.k6)(()=>[(0,o.bF)(c,{value:(0,o.R1)(A).username,"onUpdate:value":n[0]||(n[0]=e=>(0,o.R1)(A).username=e),placeholder:(0,o.R1)(t)("login.form.usernamePlaceholder")},null,8,["value","placeholder"])]),_:1}),(0,o.bF)(u,{"show-label":!1,path:"password"},{default:(0,o.k6)(()=>[(0,o.bF)(c,{value:(0,o.R1)(A).password,"onUpdate:value":n[1]||(n[1]=e=>(0,o.R1)(A).password=e),class:"password-input",type:"password","show-password-on":"click",placeholder:(0,o.R1)(t)("login.form.passwordPlaceholder"),onKeyup:(0,o.jR)(x,["enter"])},null,8,["value","placeholder"])]),_:1}),(0,o.R1)(k)?((0,o.uX)(),(0,o.Wv)(u,{key:0,"show-label":!1,path:"validate_code"},{default:(0,o.k6)(()=>[(0,o.bF)(c,{value:(0,o.R1)(A).validate_code,"onUpdate:value":n[2]||(n[2]=e=>(0,o.R1)(A).validate_code=e),class:"flex-1",placeholder:(0,o.R1)(t)("login.form.captcha"),"input-props":{spellcheck:!1},onKeydown:(0,o.jR)(x,["enter"])},null,8,["value","placeholder"]),(0,o.bF)(p,{size:"small",show:(0,o.R1)(R)},{default:(0,o.k6)(()=>[(0,o.Lk)("div",{class:"code",onClick:n[3]||(n[3]=e=>C())},[(0,o.Lk)("img",{class:"w-full h-full",src:(0,o.R1)(w),title:(0,o.R1)(t)("login.form.changeCaptcha"),alt:(0,o.R1)(t)("login.form.captcha")},null,8,g)])]),_:1},8,["show"])]),_:1})):(0,o.Q3)("",!0),(0,o.bF)(u,{"show-label":!1,"show-feedback":!1},{default:(0,o.k6)(()=>[(0,o.bF)(v,{type:"primary",size:"large",class:"font-bold",loading:(0,o.R1)(z),disabled:(0,o.R1)(z),block:!0,onClick:x},{default:(0,o.k6)(()=>[(0,o.eW)((0,o.v_)((0,o.R1)(t)("login.form.loginButton")),1)]),_:1},8,["loading","disabled"])]),_:1})]),_:1},8,["model"])])])}}}),b=(0,n(64901).default)(y,[["__scopeId","data-v-77db3384"]])},18872(e,t,n){n.d(t,{A:()=>i});var a=n(90290);function i(e,t){return(0,a.EW)(()=>{for(let n of t)if(void 0!==e[n])return e[n];return e[t[t.length-1]]})}},82806(e,t,n){e.exports=n.p+"static/image/logo.3b07dac3.png"},66318(e,t,n){n.d(t,{A:()=>l});var a=n(24548),i=n(30901);let l=function(e,t){t=(0,a.A)(t,e);for(var n=0,l=t.length;null!=e&&n<l;)e=e[(0,i.A)(t[n++])];return n&&n==l?e:void 0}},24548(e,t,n){n.d(t,{A:()=>v});var a,i,l=n(92049),r=n(86586),s=n(51046);function o(e,t){if("function"!=typeof e||null!=t&&"function"!=typeof t)throw TypeError("Expected a function");var n=function(){var a=arguments,i=t?t.apply(this,a):a[0],l=n.cache;if(l.has(i))return l.get(i);var r=e.apply(this,a);return n.cache=l.set(i,r)||l,r};return n.cache=new(o.Cache||s.A),n}o.Cache=s.A;var d=/[^.[\]]+|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(?:\.|\[\])(?:\.|\[\]|$))/g,c=/\\(\\)?/g,u=(i=(a=o(function(e){var t=[];return 46===e.charCodeAt(0)&&t.push(""),e.replace(d,function(e,n,a,i){t.push(a?i.replace(c,"$1"):n||e)}),t},function(e){return 500===i.size&&i.clear(),e})).cache,a),p=n(24898);let v=function(e,t){return(0,l.A)(e)?e:(0,r.A)(e,t)?[e]:u((0,p.A)(e))}},86586(e,t,n){n.d(t,{A:()=>s});var a=n(92049),i=n(61882),l=/\.|\[(?:[^[\]]*|(["'])(?:(?!\1)[^\\]|\\.)*?\1)\]/,r=/^\w*$/;let s=function(e,t){if((0,a.A)(e))return!1;var n=typeof e;return!!("number"==n||"symbol"==n||"boolean"==n||null==e||(0,i.A)(e))||r.test(e)||!l.test(e)||null!=t&&e in Object(t)}},30901(e,t,n){n.d(t,{A:()=>l});var a=n(61882),i=1/0;let l=function(e){if("string"==typeof e||(0,a.A)(e))return e;var t=e+"";return"0"==t&&1/e==-i?"-0":t}},77500(e,t,n){n.d(t,{A:()=>i});var a=n(66318);let i=function(e,t,n){var i=null==e?void 0:(0,a.A)(e,t);return void 0===i?n:i}},76628(e,t,n){n.d(t,{A:()=>m});var a=n(44041),i=n(18872),l=n(90290),r=n(73445),s=n(49359),o=n(50922),d=n(4019),c=n(75454),u=n(43190),p=n(15268);let v=(0,c.c)([(0,c.c)("@keyframes spin-rotate",`
+ from {
+ transform: rotate(0);
+ }
+ to {
+ transform: rotate(360deg);
+ }
+ `),(0,c.cB)("spin-container",`
+ position: relative;
+ `,[(0,c.cB)("spin-body",`
+ position: absolute;
+ top: 50%;
+ left: 50%;
+ transform: translateX(-50%) translateY(-50%);
+ `,[(0,p.v)()])]),(0,c.cB)("spin-body",`
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ flex-direction: column;
+ `),(0,c.cB)("spin",`
+ display: inline-flex;
+ height: var(--n-size);
+ width: var(--n-size);
+ font-size: var(--n-size);
+ color: var(--n-color);
+ `,[(0,c.cM)("rotate",`
+ animation: spin-rotate 2s linear infinite;
+ `)]),(0,c.cB)("spin-description",`
+ display: inline-block;
+ font-size: var(--n-font-size);
+ color: var(--n-text-color);
+ transition: color .3s var(--n-bezier);
+ margin-top: 8px;
+ `),(0,c.cB)("spin-content",`
+ opacity: 1;
+ transition: opacity .3s var(--n-bezier);
+ pointer-events: all;
+ `,[(0,c.cM)("spinning",`
+ user-select: none;
+ -webkit-user-select: none;
+ pointer-events: none;
+ opacity: var(--n-opacity-spinning);
+ `)])]),f={small:20,medium:18,large:16},h=Object.assign(Object.assign({},s.A.props),{contentClass:String,contentStyle:[Object,String],description:String,stroke:String,size:{type:[String,Number],default:"medium"},show:{type:Boolean,default:!0},strokeWidth:Number,rotate:{type:Boolean,default:!0},spinning:{type:Boolean,validator:()=>!0,default:void 0},delay:Number}),m=(0,l.pM)({name:"Spin",props:h,slots:Object,setup(e){let{mergedClsPrefixRef:t,inlineThemeDisabled:n}=(0,o.Ay)(e),r=(0,s.A)("Spin","-spin",v,u.A,e,t),p=(0,l.EW)(()=>{let{size:t}=e,{common:{cubicBezierEaseInOut:n},self:i}=r.value,{opacitySpinning:l,color:s,textColor:o}=i;return{"--n-bezier":n,"--n-opacity-spinning":l,"--n-size":"number"==typeof t?(0,a.Cw)(t):i[(0,c.cF)("size",t)],"--n-color":s,"--n-text-color":o}}),h=n?(0,d.R)("spin",(0,l.EW)(()=>{let{size:t}=e;return"number"==typeof t?String(t):t[0]}),p,e):void 0,m=(0,i.A)(e,["spinning","show"]),g=(0,l.KR)(!1);return(0,l.nT)(t=>{let n;if(m.value){let{delay:a}=e;if(a){n=window.setTimeout(()=>{g.value=!0},a),t(()=>{clearTimeout(n)});return}}g.value=m.value}),{mergedClsPrefix:t,active:g,mergedStrokeWidth:(0,l.EW)(()=>{let{strokeWidth:t}=e;if(void 0!==t)return t;let{size:n}=e;return f["number"==typeof n?"medium":n]}),cssVars:n?void 0:p,themeClass:null==h?void 0:h.themeClass,onRender:null==h?void 0:h.onRender}},render(){var e,t;let{$slots:n,mergedClsPrefix:a,description:i}=this,s=n.icon&&this.rotate,o=(i||n.description)&&(0,l.h)("div",{class:`${a}-spin-description`},i||(null==(e=n.description)?void 0:e.call(n))),d=n.icon?(0,l.h)("div",{class:[`${a}-spin-body`,this.themeClass]},(0,l.h)("div",{class:[`${a}-spin`,s&&`${a}-spin--rotate`],style:n.default?"":this.cssVars},n.icon()),o):(0,l.h)("div",{class:[`${a}-spin-body`,this.themeClass]},(0,l.h)(r.A,{clsPrefix:a,style:n.default?"":this.cssVars,stroke:this.stroke,"stroke-width":this.mergedStrokeWidth,class:`${a}-spin`}),o);return null==(t=this.onRender)||t.call(this),n.default?(0,l.h)("div",{class:[`${a}-spin-container`,this.themeClass],style:this.cssVars},(0,l.h)("div",{class:[`${a}-spin-content`,this.active&&`${a}-spin-content--spinning`,this.contentClass],style:this.contentStyle},n),(0,l.h)(l.eB,{name:"fade-in-transition"},{default:()=>this.active?d:null})):d}})}}]);

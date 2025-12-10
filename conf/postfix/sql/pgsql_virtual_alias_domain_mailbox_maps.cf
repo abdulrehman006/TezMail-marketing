@@ -1,0 +1,7 @@
+user = billionmail
+password = PW1sHKFD5i0ArO4xVWn9a2IQ6liw6kAq
+hosts = pgsql
+dbname = billionmail
+
+query = SELECT maildir FROM mailbox,alias_domain WHERE alias_domain.alias_domain = '%d' and mailbox.username = '%u' || '@' || alias_domain.target_domain AND mailbox.active = 1 AND alias_domain.active = 1
+

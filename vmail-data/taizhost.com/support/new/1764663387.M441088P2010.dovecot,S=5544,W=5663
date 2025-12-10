@@ -1,0 +1,119 @@
+Return-Path: <>
+Delivered-To: support@taizhost.com
+Received: from localhost ([172.66.1.7])
+	by dovecot with LMTP
+	id yG/CGVugLmnaBwAAkzG9Ng
+	(envelope-from <>)
+	for <support@taizhost.com>; Tue, 02 Dec 2025 08:16:27 +0000
+Received: by localhost (PostBillionMail)
+	id 6689DBC281; Tue,  2 Dec 2025 08:16:27 +0000 (UTC)
+Date: Tue,  2 Dec 2025 08:16:27 +0000 (UTC)
+From: Mail Delivery System <MAILER-DAEMON@localhost>
+Subject: Undelivered Mail Returned to Sender
+To: support@taizhost.com
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="A3D5CBC276.1764663387/localhost"
+Content-Transfer-Encoding: 8bit
+Message-Id: <20251202081627.6689DBC281@localhost>
+
+This is a MIME-encapsulated message.
+
+--A3D5CBC276.1764663387/localhost
+Content-Description: Notification
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This is the mail system at host localhost.
+
+I'm sorry to have to inform you that your message could not
+be delivered to one or more recipients. It's attached below.
+
+For further assistance, please send mail to postmaster.
+
+If you do so, please include this problem report. You can
+delete your own text from the attached returned message.
+
+                   The mail system
+
+<abdulrehmanallshore@gmail.com>: host
+    email-smtp.us-east-1.amazonaws.com[3.224.1.122] said: 530 Authentication
+    required (in reply to MAIL FROM command)
+
+--A3D5CBC276.1764663387/localhost
+Content-Description: Delivery report
+Content-Type: message/global-delivery-status
+Content-Transfer-Encoding: 8bit
+
+Reporting-MTA: dns; localhost
+X-PostBillionMail-Queue-ID: A3D5CBC276
+X-PostBillionMail-Sender: rfc822; support@taizhost.com
+Arrival-Date: Tue,  2 Dec 2025 08:16:25 +0000 (UTC)
+
+Final-Recipient: rfc822; abdulrehmanallshore@gmail.com
+Original-Recipient: rfc822;abdulrehmanallshore@gmail.com
+Action: failed
+Status: 5.0.0
+Remote-MTA: dns; email-smtp.us-east-1.amazonaws.com
+Diagnostic-Code: smtp; 530 Authentication required
+
+--A3D5CBC276.1764663387/localhost
+Content-Description: Undelivered Message
+Content-Type: message/global
+Content-Transfer-Encoding: 8bit
+
+Return-Path: <support@taizhost.com>
+Received: from localhost (billionmail-core-billionmail-1.billionmail_billionmail-network [172.66.1.4])
+	(Authenticated sender: support@taizhost.com)
+	by localhost (PostBillionMail) with UTF8SMTPA id A3D5CBC276
+	for <abdulrehmanallshore@gmail.com>; Tue,  2 Dec 2025 08:16:25 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=taizhost.com;
+	s=default; t=1764663385;
+	h=from:subject:date:message-id:to:mime-version:content-type:
+	 content-transfer-encoding; bh=jycLvdnRqFCg5Mo5Em0E5tPi+Z7L4WvZ6InT76fYr3s=;
+	b=HUhN7rDos+N/0RBWNhNFx6UGR5t0uUFmv6UfPtBvzm2DrRpMyNajTvuGte3ekanHpxv4Cj
+	bzM1GoIZiijLkgt35/k386qs3onUNkDq8/0Pu/0qqwF+OtKMpsrsW7jXpPO7HbUZ7s5Abu
+	nEQz+ovPug8njook5xccTEayqy7KEfZnusP8jCw9ZFmyxRtPuHkzKJTMZtX8FqDYcEHFBO
+	eEOJhisbWLgXt+ofKDT8Ifu6o5vm72psb65I627EjQqWDUxMfz3NSL2aCzZqcq+NhNvOKJ
+	fB30i+/PC2ka4/drT6dDaLAY3Rgo1pyHM5qCCO35wDOhVa/C6DpHnR7A47iS1w==
+From: support <support@taizhost.com>
+To: abdulrehmanallshore@gmail.com
+Subject: testing
+MIME-Version: 1.0
+Content-Transfer-Encoding: quoted-printable
+X-Mailer: BillionMail
+Message-ID: <1764663385655.2b10639a940ca1b664b8e66c8265a156@taizhost.com>
+Date: Tue, 02 Dec 2025 08:16:25 +0000
+Content-Type: text/html; charset=utf-8
+
+<table style=3D"background-color: rgb(255, 255, 255); font-family: &quot;Pi=
+ngFang SC&quot;, &quot;Microsoft YaHei&quot;; width: 100%; border-spacing: =
+0px;"><tr><td><div style=3D"padding: 0px; width: 500px; margin: 0px auto;">=
+<table style=3D"width: 100%; border-spacing: 0px;"><tr><td style=3D"width: =
+100%; padding: 0px;"><div style=3D"text-align: left; padding: 10px;"><div s=
+tyle=3D"display: inline-block; color: rgb(51, 51, 51); font-weight: normal;=
+ font-size: 22px; line-height: 140%; letter-spacing: 0px;"><p style=3D"marg=
+in: 0;">User name</p></div></div><div style=3D"text-align: center; padding:=
+ 10px;"><img src=3D"" alt=3D"" style=3D"display: inline-block; width: 100%;=
+ box-sizing: border-box; text-decoration: none;"></div><div style=3D"text-a=
+lign: left; padding: 10px;"><div style=3D"display: inline-block; color: rgb=
+(51, 51, 51); font-weight: normal; font-size: 14px; line-height: 120%; lett=
+er-spacing: 0px;"><p style=3D"margin: 0;">Testing</p></div></div></td></tr>=
+</table></div></td></tr><tr><td><div style=3D"padding: 0px; width: 500px; m=
+argin: 0px auto;"><table style=3D"width: 100%; border-spacing: 0px;"><tr><t=
+d style=3D"width: 100%; padding: 0px;"><div style=3D"line-height: 1px; text=
+-align: center; padding: 16px 10px;"><hr style=3D"display: inline-block; wi=
+dth: 100%; margin: 0px; vertical-align: middle; box-sizing: border-box; bor=
+der-top: 1px solid rgb(187, 187, 187);"></div><div style=3D"text-align: cen=
+ter; padding: 10px;"><a href=3D"{{ UnsubscribeURL . }}" target=3D"_blank" s=
+tyle=3D"display: inline-block; color: rgb(162, 162, 162); font-weight: norm=
+al; font-size: 12px; line-height: 120%; letter-spacing: 0px; text-decoratio=
+n: none;"><p style=3D"margin: 0;"><u>Unsubscribe</u></p></a></div></td></tr=
+></table></div></td></tr><tr><td><div style=3D"display: block; padding: 10p=
+x; line-height: 140%; color: rgb(153, 153, 153); text-align: center; font-s=
+ize: 12px;"><span>Powered by </span><a href=3D"https://www.billionmail.com"=
+ target=3D"_blank" style=3D"color: rgb(153, 153, 153); text-decoration: und=
+erline;">BillionMail</a></div></td></tr></table>
+
+--A3D5CBC276.1764663387/localhost--

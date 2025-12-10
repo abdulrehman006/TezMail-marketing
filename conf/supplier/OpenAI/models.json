@@ -1,0 +1,1062 @@
+[
+  {
+    "title": "OpenAI/gpt-4-0613",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4-0613",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-3.5-turbo",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-3.5-turbo",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5.1-codex-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5.1-codex-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5.1-chat-latest",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5.1-chat-latest",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5.1-2025-11-13",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5.1-2025-11-13",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5.1",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5.1",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5.1-codex",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5.1-codex",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/davinci-002",
+    "supplierName": "OpenAI",
+    "modelId": "davinci-002",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/babbage-002",
+    "supplierName": "OpenAI",
+    "modelId": "babbage-002",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-3.5-turbo-instruct",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-3.5-turbo-instruct",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-3.5-turbo-instruct-0914",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-3.5-turbo-instruct-0914",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/dall-e-3",
+    "supplierName": "OpenAI",
+    "modelId": "dall-e-3",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/dall-e-2",
+    "supplierName": "OpenAI",
+    "modelId": "dall-e-2",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4-1106-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4-1106-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-3.5-turbo-1106",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-3.5-turbo-1106",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/tts-1-hd",
+    "supplierName": "OpenAI",
+    "modelId": "tts-1-hd",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/tts-1-1106",
+    "supplierName": "OpenAI",
+    "modelId": "tts-1-1106",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/tts-1-hd-1106",
+    "supplierName": "OpenAI",
+    "modelId": "tts-1-hd-1106",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/text-embedding-3-small",
+    "supplierName": "OpenAI",
+    "modelId": "text-embedding-3-small",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/text-embedding-3-large",
+    "supplierName": "OpenAI",
+    "modelId": "text-embedding-3-large",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4-0125-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4-0125-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4-turbo-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4-turbo-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-3.5-turbo-0125",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-3.5-turbo-0125",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4-turbo",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4-turbo",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4-turbo-2024-04-09",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4-turbo-2024-04-09",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-2024-05-13",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-2024-05-13",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-2024-07-18",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-2024-07-18",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-2024-08-06",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-2024-08-06",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/chatgpt-4o-latest",
+    "supplierName": "OpenAI",
+    "modelId": "chatgpt-4o-latest",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-realtime-preview-2024-10-01",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-realtime-preview-2024-10-01",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-audio-preview-2024-10-01",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-audio-preview-2024-10-01",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-audio-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-audio-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-realtime-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-realtime-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/omni-moderation-latest",
+    "supplierName": "OpenAI",
+    "modelId": "omni-moderation-latest",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/omni-moderation-2024-09-26",
+    "supplierName": "OpenAI",
+    "modelId": "omni-moderation-2024-09-26",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-realtime-preview-2024-12-17",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-realtime-preview-2024-12-17",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-audio-preview-2024-12-17",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-audio-preview-2024-12-17",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-realtime-preview-2024-12-17",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-realtime-preview-2024-12-17",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-audio-preview-2024-12-17",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-audio-preview-2024-12-17",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o1-2024-12-17",
+    "supplierName": "OpenAI",
+    "modelId": "o1-2024-12-17",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o1",
+    "supplierName": "OpenAI",
+    "modelId": "o1",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-realtime-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-realtime-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-audio-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-audio-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-mini",
+    "supplierName": "OpenAI",
+    "modelId": "o3-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-mini-2025-01-31",
+    "supplierName": "OpenAI",
+    "modelId": "o3-mini-2025-01-31",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-2024-11-20",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-2024-11-20",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-search-preview-2025-03-11",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-search-preview-2025-03-11",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-search-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-search-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-search-preview-2025-03-11",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-search-preview-2025-03-11",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-search-preview",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-search-preview",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-transcribe",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-transcribe",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-transcribe",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-transcribe",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o1-pro-2025-03-19",
+    "supplierName": "OpenAI",
+    "modelId": "o1-pro-2025-03-19",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o1-pro",
+    "supplierName": "OpenAI",
+    "modelId": "o1-pro",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-mini-tts",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-mini-tts",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-2025-04-16",
+    "supplierName": "OpenAI",
+    "modelId": "o3-2025-04-16",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o4-mini-2025-04-16",
+    "supplierName": "OpenAI",
+    "modelId": "o4-mini-2025-04-16",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3",
+    "supplierName": "OpenAI",
+    "modelId": "o3",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o4-mini",
+    "supplierName": "OpenAI",
+    "modelId": "o4-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4.1-2025-04-14",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4.1-2025-04-14",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4.1",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4.1",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4.1-mini-2025-04-14",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4.1-mini-2025-04-14",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4.1-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4.1-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4.1-nano-2025-04-14",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4.1-nano-2025-04-14",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4.1-nano",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4.1-nano",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-image-1",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-image-1",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/codex-mini-latest",
+    "supplierName": "OpenAI",
+    "modelId": "codex-mini-latest",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-pro",
+    "supplierName": "OpenAI",
+    "modelId": "o3-pro",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-realtime-preview-2025-06-03",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-realtime-preview-2025-06-03",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-audio-preview-2025-06-03",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-audio-preview-2025-06-03",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-pro-2025-06-10",
+    "supplierName": "OpenAI",
+    "modelId": "o3-pro-2025-06-10",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o4-mini-deep-research",
+    "supplierName": "OpenAI",
+    "modelId": "o4-mini-deep-research",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-deep-research",
+    "supplierName": "OpenAI",
+    "modelId": "o3-deep-research",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-4o-transcribe-diarize",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-4o-transcribe-diarize",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o3-deep-research-2025-06-26",
+    "supplierName": "OpenAI",
+    "modelId": "o3-deep-research-2025-06-26",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/o4-mini-deep-research-2025-06-26",
+    "supplierName": "OpenAI",
+    "modelId": "o4-mini-deep-research-2025-06-26",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-chat-latest",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-chat-latest",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-2025-08-07",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-2025-08-07",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-mini-2025-08-07",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-mini-2025-08-07",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-nano-2025-08-07",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-nano-2025-08-07",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-nano",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-nano",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-audio-2025-08-28",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-audio-2025-08-28",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-realtime",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-realtime",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-realtime-2025-08-28",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-realtime-2025-08-28",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-audio",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-audio",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-codex",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-codex",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-image-1-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-image-1-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-pro-2025-10-06",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-pro-2025-10-06",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-pro",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-pro",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-audio-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-audio-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-audio-mini-2025-10-06",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-audio-mini-2025-10-06",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-search-api",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-search-api",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-realtime-mini",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-realtime-mini",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-realtime-mini-2025-10-06",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-realtime-mini-2025-10-06",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/sora-2",
+    "supplierName": "OpenAI",
+    "modelId": "sora-2",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/sora-2-pro",
+    "supplierName": "OpenAI",
+    "modelId": "sora-2-pro",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-5-search-api-2025-10-14",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-5-search-api-2025-10-14",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/gpt-3.5-turbo-16k",
+    "supplierName": "OpenAI",
+    "modelId": "gpt-3.5-turbo-16k",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/tts-1",
+    "supplierName": "OpenAI",
+    "modelId": "tts-1",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "OpenAI/whisper-1",
+    "supplierName": "OpenAI",
+    "modelId": "whisper-1",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  },
+  {
+    "title": "",
+    "supplierName": "OpenAI",
+    "modelId": "text-embedding-ada-002",
+    "max_tokens": 8192,
+    "capability": [
+      "llm"
+    ],
+    "status": true
+  }
+]

@@ -1,0 +1,7 @@
+user = billionmail
+password = PW1sHKFD5i0ArO4xVWn9a2IQ6liw6kAq
+hosts = pgsql
+dbname = billionmail
+
+query = SELECT goto FROM alias,alias_domain WHERE alias_domain.alias_domain = '%d' and alias.address = '%u' || '@' || alias_domain.target_domain AND alias.active = 1 AND alias_domain.active = 1
+

@@ -1,0 +1,133 @@
+Return-Path: <>
+Delivered-To: postmaster@email.tez.host
+Received: from email.tez.host ([172.66.1.7])
+	by dovecot with LMTP
+	id uOETF0O/Lmk8AAAAkzG9Ng
+	(envelope-from <>)
+	for <postmaster@email.tez.host>; Tue, 02 Dec 2025 10:28:19 +0000
+Received: by email.tez.host (PostBillionMail)
+	id 507DDBC298; Tue,  2 Dec 2025 10:28:19 +0000 (UTC)
+Date: Tue,  2 Dec 2025 10:28:19 +0000 (UTC)
+From: Mail Delivery System <MAILER-DAEMON@email.tez.host>
+Subject: Undelivered Mail Returned to Sender
+To: postmaster@email.tez.host
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="4958ABC295.1764671299/email.tez.host"
+Content-Transfer-Encoding: 8bit
+Message-Id: <20251202102819.507DDBC298@email.tez.host>
+
+This is a MIME-encapsulated message.
+
+--4958ABC295.1764671299/email.tez.host
+Content-Description: Notification
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This is the mail system at host email.tez.host.
+
+I'm sorry to have to inform you that your message could not
+be delivered to one or more recipients. It's attached below.
+
+For further assistance, please send mail to postmaster.
+
+If you do so, please include this problem report. You can
+delete your own text from the attached returned message.
+
+                   The mail system
+
+<abdulrehmanallshore@gmail.com>: host gmail-smtp-in.l.google.com[74.125.206.27]
+    said: 550-5.7.26 Your email has been blocked because the sender is
+    unauthenticated. 550-5.7.26 Gmail requires all senders to authenticate with
+    either SPF or DKIM. 550-5.7.26  550-5.7.26  Authentication results:
+    550-5.7.26  DKIM = did not pass 550-5.7.26  SPF [email.tez.host] with ip:
+    [91.98.156.67] = did not pass 550-5.7.26  550-5.7.26  For instructions on
+    setting up authentication, go to 550 5.7.26
+    https://support.google.com/mail/answer/81126#authentication
+    ffacd0b85a97d-42e1ca3073bsi6537276f8f.430 - gsmtp (in reply to end of DATA
+    command)
+
+--4958ABC295.1764671299/email.tez.host
+Content-Description: Delivery report
+Content-Type: message/global-delivery-status
+Content-Transfer-Encoding: 8bit
+
+Reporting-MTA: dns; email.tez.host
+X-PostBillionMail-Queue-ID: 4958ABC295
+X-PostBillionMail-Sender: rfc822; postmaster@email.tez.host
+Arrival-Date: Tue,  2 Dec 2025 10:28:18 +0000 (UTC)
+
+Final-Recipient: rfc822; abdulrehmanallshore@gmail.com
+Original-Recipient: rfc822;abdulrehmanallshore@gmail.com
+Action: failed
+Status: 5.7.26
+Remote-MTA: dns; gmail-smtp-in.l.google.com
+Diagnostic-Code: smtp; 550-5.7.26 Your email has been blocked because the
+    sender is unauthenticated. 550-5.7.26 Gmail requires all senders to
+    authenticate with either SPF or DKIM. 550-5.7.26  550-5.7.26
+    Authentication results: 550-5.7.26  DKIM = did not pass 550-5.7.26  SPF
+    [email.tez.host] with ip: [91.98.156.67] = did not pass 550-5.7.26
+    550-5.7.26  For instructions on setting up authentication, go to 550 5.7.26
+    https://support.google.com/mail/answer/81126#authentication
+    ffacd0b85a97d-42e1ca3073bsi6537276f8f.430 - gsmtp
+
+--4958ABC295.1764671299/email.tez.host
+Content-Description: Undelivered Message
+Content-Type: message/global
+Content-Transfer-Encoding: 8bit
+
+Return-Path: <postmaster@email.tez.host>
+Received: from localhost (billionmail-core-billionmail-1.billionmail_billionmail-network [172.66.1.4])
+	(Authenticated sender: postmaster@email.tez.host)
+	by email.tez.host (PostBillionMail) with UTF8SMTPA id 4958ABC295
+	for <abdulrehmanallshore@gmail.com>; Tue,  2 Dec 2025 10:28:18 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=email.tez.host;
+	s=default; t=1764671298;
+	h=from:subject:date:message-id:to:mime-version:content-type:
+	 content-transfer-encoding; bh=jycLvdnRqFCg5Mo5Em0E5tPi+Z7L4WvZ6InT76fYr3s=;
+	b=BFxAFZ/PLx9ejG8C9/aZgHCRFjhtCNIGowu2LqK15BThnPBEeGbIFRKkK4iRXTEYawwyEB
+	eGcg/vXAi9ETwKjfbKl2zw3TJ/o2j/r6nH39sPznhtfE+B6KzhHTIOxyFdXRyXlwbE6WpQ
+	27vISxdlXnykhpkqLzpVCzjYkNLEnxmmJDW5RGTjVBvl/5wCG3aDlTso2rXATm+rUloFIF
+	j8cQsQzUVdiMqQH/JpV1SYH6LLNlgp2MCk0TmphAi+BoHiEkK9csbObmNd6oz+ghYYLivn
+	mOziwAEcGGKBN4JjPggXc4C12spAJG/9qxZgeTVtDTxo3VcyQblXgdm4Tnh1OA==
+From: postmaster <postmaster@email.tez.host>
+To: abdulrehmanallshore@gmail.com
+Subject: test
+MIME-Version: 1.0
+Content-Transfer-Encoding: quoted-printable
+X-Mailer: BillionMail
+Message-ID: <1764671297951.8f755fa305b80b34ba06256c3dc5a4c6@email.tez.host>
+Date: Tue, 02 Dec 2025 10:28:17 +0000
+Content-Type: text/html; charset=utf-8
+
+<table style=3D"background-color: rgb(255, 255, 255); font-family: &quot;Pi=
+ngFang SC&quot;, &quot;Microsoft YaHei&quot;; width: 100%; border-spacing: =
+0px;"><tr><td><div style=3D"padding: 0px; width: 500px; margin: 0px auto;">=
+<table style=3D"width: 100%; border-spacing: 0px;"><tr><td style=3D"width: =
+100%; padding: 0px;"><div style=3D"text-align: left; padding: 10px;"><div s=
+tyle=3D"display: inline-block; color: rgb(51, 51, 51); font-weight: normal;=
+ font-size: 22px; line-height: 140%; letter-spacing: 0px;"><p style=3D"marg=
+in: 0;">User name</p></div></div><div style=3D"text-align: center; padding:=
+ 10px;"><img src=3D"" alt=3D"" style=3D"display: inline-block; width: 100%;=
+ box-sizing: border-box; text-decoration: none;"></div><div style=3D"text-a=
+lign: left; padding: 10px;"><div style=3D"display: inline-block; color: rgb=
+(51, 51, 51); font-weight: normal; font-size: 14px; line-height: 120%; lett=
+er-spacing: 0px;"><p style=3D"margin: 0;">Testing</p></div></div></td></tr>=
+</table></div></td></tr><tr><td><div style=3D"padding: 0px; width: 500px; m=
+argin: 0px auto;"><table style=3D"width: 100%; border-spacing: 0px;"><tr><t=
+d style=3D"width: 100%; padding: 0px;"><div style=3D"line-height: 1px; text=
+-align: center; padding: 16px 10px;"><hr style=3D"display: inline-block; wi=
+dth: 100%; margin: 0px; vertical-align: middle; box-sizing: border-box; bor=
+der-top: 1px solid rgb(187, 187, 187);"></div><div style=3D"text-align: cen=
+ter; padding: 10px;"><a href=3D"{{ UnsubscribeURL . }}" target=3D"_blank" s=
+tyle=3D"display: inline-block; color: rgb(162, 162, 162); font-weight: norm=
+al; font-size: 12px; line-height: 120%; letter-spacing: 0px; text-decoratio=
+n: none;"><p style=3D"margin: 0;"><u>Unsubscribe</u></p></a></div></td></tr=
+></table></div></td></tr><tr><td><div style=3D"display: block; padding: 10p=
+x; line-height: 140%; color: rgb(153, 153, 153); text-align: center; font-s=
+ize: 12px;"><span>Powered by </span><a href=3D"https://www.billionmail.com"=
+ target=3D"_blank" style=3D"color: rgb(153, 153, 153); text-decoration: und=
+erline;">BillionMail</a></div></td></tr></table>
+
+--4958ABC295.1764671299/email.tez.host--

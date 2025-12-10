@@ -37,7 +37,7 @@ local now = tonumber(ARGV[3])
 local requested = tonumber(ARGV[4])
 
 local bucket_info = redis.call('HGETALL', key)
-local last_tokens = capacity
+local last_tokens = 1
 local last_refill_time = now
 
 if #bucket_info > 0 then

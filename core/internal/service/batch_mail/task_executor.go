@@ -637,10 +637,34 @@ func (e *TaskExecutor) processTaskRecipients(ctx context.Context, task *entity.E
 			return fmt.Errorf("failed to get recipients: %w", err)
 		}
 
-		// no more recipients, exit loop
-		if len(recipients) == 0 {
-			break
-		}
+		// no more recipients ready now, check if there are any waiting
+                if len(recipients) == 0 {
+                        // Check for pending recipients with future sent_time (rate-limited, waiting to retry)
+                        var pendingCount int
+                        pendingCount, err = g.DB().Model("recipient_info").
+                                Where("task_id", task.Id).
+                                Where("is_sent", 0).
+                                Count()
+                        if err != nil {
+                                return fmt.Errorf("failed to check pending recipients: %w", err)
+                        }
+
+                        if pendingCount > 0 {
+                                // There are recipients waiting for their sent_time, wait and retry
+                                g.Log().Debugf(ctx, "task %d: %d recipients waiting for rate limit cooldown, sleeping 30 seconds", task.Id, pendingCount)
+                                select {
+                                case <-time.After(30 * time.Second):
+                                        // Reset lastId to start from beginning and continue loop
+                                        lastId = 0
+                                        continue
+                                case <-ctx.Done():
+                                        return ctx.Err()
+                                }
+                        }
+                        // No pending recipients at all, exit loop
+                        break
+                }
+
 
 		// record batch size
 		//g.Log().Debug(ctx, "task %d: got %d recipients to send", task.Id, len(recipients))
@@ -666,15 +690,17 @@ func (e *TaskExecutor) processTaskRecipients(ctx context.Context, task *entity.E
 
 // getNextRecipientBatch
 func (e *TaskExecutor) getNextRecipientBatch(ctx context.Context, taskId, lastId, batchSize int) ([]*entity.RecipientInfo, error) {
-	var recipients []*entity.RecipientInfo
+        var recipients []*entity.RecipientInfo
+        currentTime := time.Now().Unix()
 
-	err := g.DB().Model("recipient_info").
-		Where("task_id", taskId).
-		Where("is_sent", 0).
-		Where("id > ?", lastId).
-		Order("id ASC").
-		Limit(batchSize).
-		Scan(&recipients)
+        err := g.DB().Model("recipient_info").
+                Where("task_id", taskId).
+                Where("is_sent", 0).
+                Where("id > ?", lastId).
+                Where("sent_time <= ?", currentTime).
+                Order("id ASC").
+                Limit(batchSize).
+                Scan(&recipients)
 
 	if err != nil || len(recipients) == 0 {
 		return recipients, err
@@ -767,19 +793,38 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 
 		}
 
-		// check if recipient is allowed to send with warmup
-		if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
-			if allow, waits, _ := warmup.RateLimiter().Allow(ctx, e.ctx.Value("serverIP").(string), public.GetMailProviderGroup(recipient.Recipient)); !allow {
-				if waits > 0 {
-					updates[recipient.Id] = waits * 2
-				}
-				// rate limit exceeded, skip this recipient
-				g.Log().Debug(ctx, "Rate limit exceeded for recipient %d, wait for %d seconds after retry, skipping", recipient.Id, waits)
-				continue
-			}
-		}
-
-		// create recipient copy to avoid closure problem
+            // check if recipient is allowed to send with warmup
+                if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
+                        serverIP := e.ctx.Value("serverIP").(string)
+                        providerGroup := public.GetMailProviderGroup(recipient.Recipient)
+                        
+                        // Wait for warmup rate limit - retry until allowed
+                        for {
+                                allow, waits, _ := warmup.RateLimiter().Allow(ctx, serverIP, providerGroup)
+                                if allow {
+                                        break // Token acquired, proceed with sending
+                                }
+                                
+                                // Calculate wait duration
+                                waitDuration := time.Duration(waits) * time.Second
+                                if waitDuration < 10*time.Second {
+                                        waitDuration = 10 * time.Second
+                                }
+                                if waitDuration > 60*time.Second {
+                                        waitDuration = 60 * time.Second
+                                }
+                                
+                                g.Log().Debugf(ctx, "Warmup: waiting %v for token (recipient %d, provider %s)", waitDuration, recipient.Id, providerGroup)
+                                
+                                select {
+                                case <-time.After(waitDuration):
+                                        // Retry getting token
+                                case <-ctx.Done():
+                                        return ctx.Err()
+                                }
+                        }
+                }	
+	// create recipient copy to avoid closure problem
 		recipientBak := recipient
 
 		// add wait count

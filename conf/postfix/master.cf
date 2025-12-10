@@ -141,3 +141,19 @@ scache    unix  -       -       n       -       1       scache
 #mailman   unix  -       n       n       -       -       pipe
 #  flags=FR user=list argv=/usr/lib/mailman/bin/postfix-to-mailman.py
 #  ${nexthop} ${user}
+
+# BEGIN BILLIONMAIL SMTPS CONFIG - DO NOT EDIT THIS MARKER
+smtps     unix  -       -       n       -       -       smtp
+    -o smtp_tls_wrappermode=yes
+    -o smtp_tls_security_level=encrypt
+# END BILLIONMAIL SMTPS CONFIG - DO NOT EDIT THIS MARKER
+# BEGIN BILLIONMAIL RELAY CONFIG - DO NOT EDIT THIS MARKER
+smtp_Custom_AWS_SES unix - - n - - smtp
+  -o smtp_helo_name=mail.tez.host
+  -o smtp_tls_security_level=encrypt
+  -o smtp_tls_wrappermode=no
+  -o smtp_sasl_auth_enable=yes
+  -o smtp_sasl_security_options=noanonymous
+  -o smtp_sasl_mechanism_filter=login,plain,cram-md5
+  -o smtp_sasl_mechanism_filter=login
+# END BILLIONMAIL RELAY CONFIG - DO NOT EDIT THIS MARKER
