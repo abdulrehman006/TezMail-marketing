@@ -915,7 +915,11 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 			// Log email sent result
 			if campaignLoggerForSend != nil {
 				providerGroup := public.GetMailProviderGroup(recipientBak.Recipient)
-				campaignLoggerForSend.LogEmailSent(recipientBak.Id, recipientBak.Recipient, providerGroup, result.Success, result.MessageId, result.Error)
+				errorMsg := ""
+				if result.Error != nil {
+					errorMsg = result.Error.Error()
+				}
+				campaignLoggerForSend.LogEmailSent(recipientBak.Id, recipientBak.Recipient, providerGroup, result.Success, result.MessageID, errorMsg)
 			}
 
 			// record send
