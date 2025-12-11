@@ -804,19 +804,21 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
                 if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
                         serverIP := e.ctx.Value("serverIP").(string)
                         providerGroup := public.GetMailProviderGroup(recipient.Recipient)
-                        
+
+                        // Get warmup delay from task (in seconds)
+                        warmupDelaySeconds := 60
+                        if delay, ok := e.ctx.Value("warmupDelay").(int); ok && delay > 0 {
+                                warmupDelaySeconds = delay
+                        }
+
                         // Wait for warmup rate limit - retry until allowed
                         for {
                                 allow, waits, _ := warmup.RateLimiter().Allow(ctx, serverIP, providerGroup)
                                 if allow {
                                         break // Token acquired, proceed with sending
                                 }
-                                
-                                // Calculate wait duration using warmupDelay from task (already in seconds)
-                                warmupDelaySeconds := 60
-                                if delay, ok := e.ctx.Value("warmupDelay").(int); ok && delay > 0 {
-                                        warmupDelaySeconds = delay
-                                }
+
+                                // Calculate wait duration based on rate limiter suggestion
                                 waitDuration := time.Duration(waits) * time.Second
                                 minWait := time.Duration(float64(warmupDelaySeconds)*0.5) * time.Second
                                 maxWait := time.Duration(warmupDelaySeconds) * time.Second
@@ -826,15 +828,24 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
                                 if waitDuration > maxWait {
                                         waitDuration = maxWait
                                 }
-                                
+
                                 g.Log().Debugf(ctx, "Warmup: waiting %v for token (recipient %d, provider %s)", waitDuration, recipient.Id, providerGroup)
-                                
+
                                 select {
                                 case <-time.After(waitDuration):
                                         // Retry getting token
                                 case <-ctx.Done():
                                         return ctx.Err()
                                 }
+                        }
+
+                        // Always apply warmup delay between emails (regardless of rate limiter)
+                        g.Log().Debugf(ctx, "Warmup: applying %d seconds delay before sending to recipient %d", warmupDelaySeconds, recipient.Id)
+                        select {
+                        case <-time.After(time.Duration(warmupDelaySeconds) * time.Second):
+                                // Delay complete, proceed with sending
+                        case <-ctx.Done():
+                                return ctx.Err()
                         }
                 }	
 	// create recipient copy to avoid closure problem
