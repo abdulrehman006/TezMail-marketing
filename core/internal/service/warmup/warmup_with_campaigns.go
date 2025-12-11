@@ -114,7 +114,25 @@ func (s *WarmupCampaignService) CalculateEstimatedTime(ctx context.Context, task
 		return 0, nil
 	}
 
-	// Calculate the total hourly sending rate
+	// Get the warmup_delay from the task (in seconds, default 60)
+	var task struct {
+		WarmupDelay int `json:"warmup_delay"`
+	}
+	err = g.DB().Model("email_tasks").Ctx(ctx).Where("id", taskId).Fields("warmup_delay").Scan(&task)
+	if err != nil {
+		g.Log().Warningf(ctx, "CalculateEstimatedTime: failed to get task warmup_delay for task %d: %v", taskId, err)
+	}
+
+	warmupDelay := task.WarmupDelay
+	if warmupDelay <= 0 {
+		warmupDelay = 60 // Default 60 seconds
+	}
+
+	// If warmup delay is set, calculate based on delay between each email
+	// Estimated time = number of recipients * delay per email
+	estimatedSeconds := int64(unsentCount) * int64(warmupDelay)
+
+	// Also consider the rate limits as a secondary factor
 	totalHourlyRate := 0
 	providerGroups := []string{
 		consts.MailProviderGroupGmail,
@@ -136,11 +154,14 @@ func (s *WarmupCampaignService) CalculateEstimatedTime(ctx context.Context, task
 		}
 	}
 
-	if totalHourlyRate == 0 {
-		return -1, nil // -1 indicates infinite time
+	// If rate limits exist, use the maximum of delay-based or rate-based estimate
+	if totalHourlyRate > 0 {
+		rateLimitEstimate := int64((float64(unsentCount) / float64(totalHourlyRate)) * 3600.0)
+		if rateLimitEstimate > estimatedSeconds {
+			estimatedSeconds = rateLimitEstimate
+		}
 	}
 
-	estimatedSeconds := int64((float64(unsentCount) / float64(totalHourlyRate)) * 3600.0)
 	return estimatedSeconds, nil
 }
 
