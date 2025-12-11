@@ -4,6 +4,7 @@ import (
 	"billionmail-core/internal/consts"
 	"billionmail-core/internal/service/batch_mail"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/warmup"
 	"context"
 
 	"github.com/gogf/gf/v2/errors/gerror"
@@ -47,9 +48,8 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 	if req.Unsubscribe == 0 || req.Unsubscribe == 1 {
 		updateData["unsubscribe"] = req.Unsubscribe
 	}
-	if req.Warmup == 0 || req.Warmup == 1 {
-		updateData["warmup"] = req.Warmup
-    }
+	// Note: warmup is not a column in email_tasks - it's determined by bm_campaign_warmup association
+	// The warmup association is handled separately after the database update
 	if req.WarmupDelay > 0 {
 		updateData["warmup_delay"] = req.WarmupDelay
 	}
@@ -99,9 +99,38 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 		return nil, err
 	}
 
+	// Handle warmup association when warmup is enabled/disabled
+	if req.Warmup == 1 {
+		// Warmup enabled - create association if not exists
+		serverIP, _ := public.GetServerIP()
+		if serverIP != "" {
+			_, err = warmup.WarmupCampaign().AssociateCampaignWithWarmup(ctx, int64(req.TaskId), serverIP)
+			if err != nil {
+				g.Log().Warningf(ctx, "UpdateTaskInfo: Failed to associate task %d with warmup: %v", req.TaskId, err)
+				// Don't fail the entire update, just log the warning
+			} else {
+				g.Log().Infof(ctx, "UpdateTaskInfo: Task %d associated with warmup successfully", req.TaskId)
+			}
+		}
+	} else if req.Warmup == 0 {
+		// Warmup disabled - remove association if exists
+		_, err = g.DB().Model("bm_campaign_warmup").Where("task_id", req.TaskId).Delete()
+		if err != nil {
+			g.Log().Warningf(ctx, "UpdateTaskInfo: Failed to remove warmup association for task %d: %v", req.TaskId, err)
+			// Don't fail the entire update, just log the warning
+		} else {
+			g.Log().Infof(ctx, "UpdateTaskInfo: Warmup association removed for task %d", req.TaskId)
+		}
+	}
+
+	// Safe log writing - check if subject exists in updateData
+	logMsg := "Update Task Info successfully"
+	if subject, ok := updateData["subject"].(string); ok && subject != "" {
+		logMsg = "Update Task Info: " + subject + " successfully"
+	}
 	_ = public.WriteLog(ctx, public.LogParams{
 		Type: consts.LOGTYPE.Task,
-		Log:  "Update Task Info :" + updateData["subject"].(string) + " successfully",
+		Log:  logMsg,
 		Data: updateData,
 	})
 
