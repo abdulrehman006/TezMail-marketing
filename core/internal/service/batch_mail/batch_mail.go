@@ -99,7 +99,9 @@ func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, s
 			vals, _ = g.DB().Ctx(ctx).Model("bm_campaign_warmup").WhereIn("task_id", ids).Array("task_id")
 
 			for _, val := range vals {
-				m[val.Int()].EstimatedTimeWithWarmup, _ = warmup.WarmupCampaign().CalculateEstimatedTime(ctx, val.Int64(), serverIP)
+				taskId := val.Int()
+				m[taskId].Warmup = 1 // Mark as warmup enabled
+				m[taskId].EstimatedTimeWithWarmup, _ = warmup.WarmupCampaign().CalculateEstimatedTime(ctx, val.Int64(), serverIP)
 			}
 		}
 	}
@@ -131,6 +133,12 @@ func CreateTask(ctx context.Context, args CreateTaskArgs) (int, error) {
 		tagIdsJson = gconv.String(args.TagIds)
 	}
 
+	// Set default warmup delay if not specified
+	warmupDelay := args.WarmupDelay
+	if warmupDelay <= 0 {
+		warmupDelay = 60 // Default 60 seconds
+	}
+
 	result, err := g.DB().Model("email_tasks").Insert(g.Map{
 		"task_name":       taskName,
 		"addresser":       args.Addresser,
@@ -144,17 +152,18 @@ func CreateTask(ctx context.Context, args CreateTaskArgs) (int, error) {
 		"unsubscribe":     args.Unsubscribe,
 		"threads":         args.Threads,
 		//"etypes":          args.Etypes,
-		"track_open":  args.TrackOpen,
-		"track_click": args.TrackClick,
-		"start_time":  args.StartTime,
-		"create_time": now,
-		"update_time": now,
-		"active":      1,
-		"remark":      args.Remark,
-		"add_type":    args.AddType,
-		"group_id":    args.GroupId,
-		"tag_ids":     tagIdsJson,
-		"tag_logic":   args.TagLogic,
+		"track_open":   args.TrackOpen,
+		"track_click":  args.TrackClick,
+		"start_time":   args.StartTime,
+		"create_time":  now,
+		"update_time":  now,
+		"active":       1,
+		"remark":       args.Remark,
+		"add_type":     args.AddType,
+		"group_id":     args.GroupId,
+		"tag_ids":      tagIdsJson,
+		"tag_logic":    args.TagLogic,
+		"warmup_delay": warmupDelay,
 	})
 	if err != nil {
 		g.Log().Debug(ctx, "Failed to create campaign:", err.Error())

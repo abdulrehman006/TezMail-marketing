@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 
 	"github.com/gogf/gf/v2/errors/gerror"
+	"github.com/gogf/gf/v2/frame/g"
 
 	"billionmail-core/api/batch_mail/v1"
 )
@@ -35,6 +36,12 @@ func (c *ControllerV1) TaskInfo(ctx context.Context, req *v1.TaskInfoReq) (res *
 		if err := json.Unmarshal([]byte(taskInfo.TagIdsRaw), &tagIds); err == nil {
 			taskInfo.TagIds = tagIds
 		}
+	}
+
+	// Check if warmup is enabled for this task by looking up bm_campaign_warmup table
+	count, _ := g.DB().Ctx(ctx).Model("bm_campaign_warmup").Where("task_id", req.Id).Count()
+	if count > 0 {
+		taskInfo.Warmup = 1
 	}
 
 	res.Data = taskInfo

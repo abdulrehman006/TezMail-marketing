@@ -26,6 +26,8 @@ type EmailTask struct {
 	IsRecord       int    `json:"is_record"       dc:"is record"`
 	Unsubscribe    int    `json:"unsubscribe"     dc:"unsubscribe"`
 	Threads        int    `json:"threads"         dc:"threads"`
+	Warmup         int    `json:"warmup"          dc:"warmup enabled"`
+	WarmupDelay    int    `json:"warmup_delay"    dc:"warmup delay in seconds"`
 	//Etypes                  string `json:"etypes"          dc:"etypes"`
 	TrackOpen               int       `json:"track_open"      dc:"track open"`
 	TrackClick              int       `json:"track_click"     dc:"track click"`

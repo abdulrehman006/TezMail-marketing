@@ -90,6 +90,7 @@ type EmailTask struct {
 	TagIds          []int  `json:"tag_ids"         dc:"Tag IDs (parsed array)"`
 	TagLogic        string `json:"tag_logic"       dc:"Tag Logic (AND/OR/NOT)"`
 	UseTagFilter    int     `json:"use_tag_filter"  dc:"Use Tag Filter (0: no, 1: yes)"`
+	Warmup          int     `json:"warmup"          dc:"Warmup enabled (0: no, 1: yes)" orm:"-"`
 	WarmupDelay     int     `json:"warmup_delay"    dc:"Warmup delay in seconds (default 60)"`
 }
 
