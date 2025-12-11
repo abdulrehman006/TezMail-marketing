@@ -94,6 +94,11 @@ func Start(ctx context.Context) (err error) {
 	})
 
 	// ========== Mail task processing: one executor per task ==========
+	// First, recover any interrupted tasks from previous run (e.g., container restart)
+	gtimer.AddOnce(2*time.Second, func() {
+		batch_mail.RecoverInterruptedTasks(ctx)
+	})
+	// Then start the regular task processing timer
 	gtimer.Add(5*time.Second, func() {
 		batch_mail.ProcessEmailTasks(ctx)
 	})

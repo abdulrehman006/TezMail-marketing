@@ -89,6 +89,55 @@ func CleanupIdleExecutors() {
 	}
 }
 
+// RecoverInterruptedTasks recovers tasks that were interrupted (e.g., by container restart)
+// This should be called once at application startup
+func RecoverInterruptedTasks(ctx context.Context) {
+	g.Log().Info(ctx, "Starting recovery of interrupted tasks...")
+
+	// 1. Reset all recipients stuck at is_sent=2 (fetched but not sent) back to is_sent=0
+	result, err := g.DB().Model("recipient_info").
+		Ctx(ctx).
+		Where("is_sent", 2).
+		Data(g.Map{"is_sent": 0}).
+		Update()
+
+	if err != nil {
+		g.Log().Errorf(ctx, "RecoverInterruptedTasks: Failed to reset is_sent=2 records: %v", err)
+	} else {
+		affected, _ := result.RowsAffected()
+		if affected > 0 {
+			g.Log().Infof(ctx, "RecoverInterruptedTasks: Reset %d recipients from is_sent=2 to is_sent=0", affected)
+		}
+	}
+
+	// 2. Find all tasks that were marked as "processing" (task_process=1) but have no active executor
+	// These tasks need to be reset so they can be picked up again
+	var stuckTasks []struct {
+		Id   int `json:"id"`
+		Name string `json:"task_name"`
+	}
+	err = g.DB().Model("email_tasks").
+		Ctx(ctx).
+		Fields("id, task_name").
+		Where("task_process", 1). // Was processing
+		Where("pause", 0).        // Not paused
+		Scan(&stuckTasks)
+
+	if err != nil {
+		g.Log().Errorf(ctx, "RecoverInterruptedTasks: Failed to find stuck tasks: %v", err)
+		return
+	}
+
+	if len(stuckTasks) > 0 {
+		g.Log().Infof(ctx, "RecoverInterruptedTasks: Found %d tasks stuck in processing state", len(stuckTasks))
+		for _, task := range stuckTasks {
+			g.Log().Infof(ctx, "RecoverInterruptedTasks: Task %d (%s) will be resumed", task.Id, task.Name)
+		}
+	}
+
+	g.Log().Info(ctx, "Recovery of interrupted tasks completed")
+}
+
 // ProcessEmailTasks
 func ProcessEmailTasks(ctx context.Context) {
 	// get pending tasks
