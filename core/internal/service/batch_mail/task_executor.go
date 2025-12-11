@@ -267,6 +267,18 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 	}
 	e.ctx = context.WithValue(e.ctx, "warmupDelay", warmupDelay)
 
+	// Initialize campaign logger for detailed tracking
+	var campaignLogger *CampaignLogger
+	if warmupAssociated {
+		campaignLogger, err = GetCampaignLogger(ctx, taskId, task.TaskName, warmupDelay)
+		if err != nil {
+			g.Log().Warningf(ctx, "Failed to create campaign logger for task %d: %v", taskId, err)
+		} else {
+			e.ctx = context.WithValue(e.ctx, "campaignLogger", campaignLogger)
+			g.Log().Infof(ctx, "Campaign logger initialized for task %d (%s)", taskId, task.TaskName)
+		}
+	}
+
 	// configure rate controller
 	e.configureRateController(task)
 
@@ -342,6 +354,13 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		task.Id, endTime.Format("2006-01-02 15:04:05"),
 		duration.Minutes(), sentCount, avgRate)
 	g.Log().Info(ctx, summaryMsg)
+
+	// Write summary to campaign logger and close it
+	if logger, ok := e.ctx.Value("campaignLogger").(*CampaignLogger); ok {
+		logger.LogSummary(int(sentCount), int(e.failedCount.Load()), task.RecipientCount)
+		CloseCampaignLogger(task.Id)
+		g.Log().Infof(ctx, "Campaign logger closed for task %d", task.Id)
+	}
 
 	currentTask, err := GetTaskInfo(ctx, taskId)
 	if err != nil {
@@ -800,56 +819,83 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 
 		}
 
-            // check if recipient is allowed to send with warmup
-                if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
-                        serverIP := e.ctx.Value("serverIP").(string)
-                        providerGroup := public.GetMailProviderGroup(recipient.Recipient)
+		// check if recipient is allowed to send with warmup
+		if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
+			serverIP := e.ctx.Value("serverIP").(string)
+			providerGroup := public.GetMailProviderGroup(recipient.Recipient)
 
-                        // Get warmup delay from task (in seconds)
-                        warmupDelaySeconds := 60
-                        if delay, ok := e.ctx.Value("warmupDelay").(int); ok && delay > 0 {
-                                warmupDelaySeconds = delay
-                        }
+			// Get campaign logger if available
+			var campaignLogger *CampaignLogger
+			if logger, ok := e.ctx.Value("campaignLogger").(*CampaignLogger); ok {
+				campaignLogger = logger
+			}
 
-                        // Wait for warmup rate limit - retry until allowed
-                        for {
-                                allow, waits, _ := warmup.RateLimiter().Allow(ctx, serverIP, providerGroup)
-                                if allow {
-                                        break // Token acquired, proceed with sending
-                                }
+			// Get warmup delay from task (in seconds)
+			warmupDelaySeconds := 60
+			if delay, ok := e.ctx.Value("warmupDelay").(int); ok && delay > 0 {
+				warmupDelaySeconds = delay
+			}
 
-                                // Calculate wait duration based on rate limiter suggestion
-                                waitDuration := time.Duration(waits) * time.Second
-                                minWait := time.Duration(float64(warmupDelaySeconds)*0.5) * time.Second
-                                maxWait := time.Duration(warmupDelaySeconds) * time.Second
-                                if waitDuration < minWait {
-                                        waitDuration = minWait
-                                }
-                                if waitDuration > maxWait {
-                                        waitDuration = maxWait
-                                }
+			// Log email queued for sending
+			if campaignLogger != nil {
+				campaignLogger.LogEmailSending(recipient.Id, recipient.Recipient, providerGroup, warmupDelaySeconds)
+			}
 
-                                g.Log().Debugf(ctx, "Warmup: waiting %v for token (recipient %d, provider %s)", waitDuration, recipient.Id, providerGroup)
+			// Wait for warmup rate limit - retry until allowed
+			for {
+				allow, waits, _ := warmup.RateLimiter().Allow(ctx, serverIP, providerGroup)
+				if allow {
+					break // Token acquired, proceed with sending
+				}
 
-                                select {
-                                case <-time.After(waitDuration):
-                                        // Retry getting token
-                                case <-ctx.Done():
-                                        return ctx.Err()
-                                }
-                        }
+				// Calculate wait duration based on rate limiter suggestion
+				waitDuration := time.Duration(waits) * time.Second
+				minWait := time.Duration(float64(warmupDelaySeconds)*0.5) * time.Second
+				maxWait := time.Duration(warmupDelaySeconds) * time.Second
+				if waitDuration < minWait {
+					waitDuration = minWait
+				}
+				if waitDuration > maxWait {
+					waitDuration = maxWait
+				}
 
-                        // Always apply warmup delay between emails (regardless of rate limiter)
-                        g.Log().Debugf(ctx, "Warmup: applying %d seconds delay before sending to recipient %d", warmupDelaySeconds, recipient.Id)
-                        select {
-                        case <-time.After(time.Duration(warmupDelaySeconds) * time.Second):
-                                // Delay complete, proceed with sending
-                        case <-ctx.Done():
-                                return ctx.Err()
-                        }
-                }	
-	// create recipient copy to avoid closure problem
+				// Log rate limit waiting
+				if campaignLogger != nil {
+					campaignLogger.LogWarmupWaiting(recipient.Id, recipient.Recipient, providerGroup, int(waitDuration.Seconds()))
+				}
+
+				g.Log().Debugf(ctx, "Warmup: waiting %v for token (recipient %d, provider %s)", waitDuration, recipient.Id, providerGroup)
+
+				select {
+				case <-time.After(waitDuration):
+					// Retry getting token
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+
+			// Log warmup delay being applied
+			if campaignLogger != nil {
+				campaignLogger.LogWarmupDelay(recipient.Id, recipient.Recipient, warmupDelaySeconds)
+			}
+
+			// Always apply warmup delay between emails (regardless of rate limiter)
+			g.Log().Debugf(ctx, "Warmup: applying %d seconds delay before sending to recipient %d", warmupDelaySeconds, recipient.Id)
+			select {
+			case <-time.After(time.Duration(warmupDelaySeconds) * time.Second):
+				// Delay complete, proceed with sending
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		// create recipient copy to avoid closure problem
 		recipientBak := recipient
+		// Get campaign logger for use in goroutine
+		var campaignLoggerForSend *CampaignLogger
+		if logger, ok := e.ctx.Value("campaignLogger").(*CampaignLogger); ok {
+			campaignLoggerForSend = logger
+		}
 
 		// add wait count
 		e.wg.Add(1)
@@ -859,17 +905,18 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		err := e.pool.Submit(func() {
 			defer e.wg.Done()
 			defer sendWg.Done()
-			// print task id
-			//g.Log().Debug(ctx, "current task id", task.Id, "sender-", task.Addresser, "recipient-", recipientBak.Recipient)
+
 			// personalize content
 			personalized, _ := e.personalizeEmail(ctx, emailContent, task, recipientBak)
-			//personalized := emailContent
 
 			// send email
 			result := e.sendEmail(ctx, task, recipientBak, personalized)
 
-			// use sendEmailMock (Don't use in production)
-			// result := e.sendEmailMock(ctx, task, recipientBak, personalized)
+			// Log email sent result
+			if campaignLoggerForSend != nil {
+				providerGroup := public.GetMailProviderGroup(recipientBak.Recipient)
+				campaignLoggerForSend.LogEmailSent(recipientBak.Id, recipientBak.Recipient, providerGroup, result.Success, result.MessageId, result.Error)
+			}
 
 			// record send
 			e.rateController.RecordSend()
