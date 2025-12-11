@@ -83,23 +83,23 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 	if req.TagLogic == "AND" || req.TagLogic == "OR" || req.TagLogic == "NOT" {
 		updateData["tag_logic"] = req.TagLogic
 	}
-	if len(updateData) == 0 {
-		res.SetError(gerror.New(public.LangCtx(ctx, "No valid update fields")))
-		return
-	}
 
-	_, err = g.DB().Model("email_tasks").
-		Where("id", req.TaskId).
-		Data(updateData).
-		Update()
+	// Only update database if there are fields to update
+	if len(updateData) > 0 {
+		_, err = g.DB().Model("email_tasks").
+			Where("id", req.TaskId).
+			Data(updateData).
+			Update()
 
-	if err != nil {
-
-		res.SetError(gerror.New(public.LangCtx(ctx, "Failed to update task information : {}", err.Error())))
-		return nil, err
+		if err != nil {
+			res.SetError(gerror.New(public.LangCtx(ctx, "Failed to update task information : {}", err.Error())))
+			return nil, err
+		}
 	}
 
 	// Handle warmup association when warmup is enabled/disabled
+	// Note: req.Warmup values: 1 = enable, 0 = disable, -1 = no change
+	// When not provided in request, Go defaults to 0, so we use -1 for "no change"
 	if req.Warmup == 1 {
 		// Warmup enabled - create association if not exists
 		serverIP, _ := public.GetServerIP()
@@ -112,8 +112,9 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 				g.Log().Infof(ctx, "UpdateTaskInfo: Task %d associated with warmup successfully", req.TaskId)
 			}
 		}
-	} else if req.Warmup == 0 {
+	} else if req.Warmup == 0 && len(updateData) > 0 {
 		// Warmup disabled - remove association if exists
+		// Only do this if there are other fields being updated (to distinguish from default zero value)
 		_, err = g.DB().Model("bm_campaign_warmup").Where("task_id", req.TaskId).Delete()
 		if err != nil {
 			g.Log().Warningf(ctx, "UpdateTaskInfo: Failed to remove warmup association for task %d: %v", req.TaskId, err)

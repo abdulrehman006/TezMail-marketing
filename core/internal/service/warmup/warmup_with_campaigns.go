@@ -105,7 +105,10 @@ func (s *WarmupCampaignService) AssociateCampaignWithWarmup(ctx context.Context,
 // CalculateEstimatedTime calculates the estimated sending time in seconds for a given task and IP.
 func (s *WarmupCampaignService) CalculateEstimatedTime(ctx context.Context, taskId int64, senderIp string) (int64, error) {
 	// Get the total number of unsent recipients
-	unsentCount, err := g.DB().Model("recipient_info").Ctx(ctx).Where("task_id", taskId).Where("is_sent", 0).Count()
+	// is_sent = 0: pending (not processed)
+	// is_sent = 2: fetched/in-progress (interrupted, not yet sent)
+	// Both should be counted as unsent for estimation purposes
+	unsentCount, err := g.DB().Model("recipient_info").Ctx(ctx).Where("task_id", taskId).WhereIn("is_sent", []int{0, 2}).Count()
 	if err != nil {
 		return -1, fmt.Errorf("failed to get recipient count: %w", err)
 	}

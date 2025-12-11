@@ -279,7 +279,7 @@ type UpdateTaskInfoReq struct {
 	Remark        string `json:"remark" dc:"remark"`
 	TemplateId    int    `json:"template_id" dc:"template id"`
 	Unsubscribe   int    `json:"unsubscribe" v:"in:0,1" dc:"unsubscribe"`
-	Warmup        int     `json:"warmup" v:"in:0,1" dc:"warmup"`
+	Warmup        int     `json:"warmup" v:"in:-1,0,1" dc:"warmup (-1=no change, 0=disable, 1=enable)"`
 	WarmupDelay   int     `json:"warmup_delay" v:"min:0|max:3600" dc:"warmup delay in seconds"`
 	Threads       int    `json:"threads" v:"min:0" dc:"threads"`
 	StartTime     int    `json:"start_time" dc:"start time"`
