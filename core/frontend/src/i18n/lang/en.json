@@ -99,7 +99,7 @@
 		}
 	},
 	"login": {
-		"title": "BillionMail",
+		"title": "TezMail",
 		"form": {
 			"usernamePlaceholder": "Username",
 			"passwordPlaceholder": "Password",
@@ -425,7 +425,7 @@
 			"useAiTools": "Use AI tools to help you automatically generate email content and improve your work efficiency.",
 			"create": "Create",
 			"notices": {
-				"domainListEmpty": "Please create the first domain for BillionMail to send emails",
+				"domainListEmpty": "Please create the first domain for TezMail to send emails",
 				"aiConfigurationInvalid": "AI large model is not currently configured, you cannot use AI model to create email templates",
 				"invalidBrandDomain": "Please create brand information for the domain first"
 			},
@@ -438,7 +438,7 @@
 			"title": "AI Template",
 			"welcomeMessage": "You can say: Create a welcome email for users joining {domain}",
 			"greeting": "Let's create a beautiful email template.",
-			"brandName": "BillionMail",
+			"brandName": "TezMail",
 			"buttons": {
 				"regenerate": "Regenerate",
 				"info": "Info",

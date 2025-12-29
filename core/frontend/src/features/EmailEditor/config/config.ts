@@ -427,7 +427,7 @@ export const copyrightVNode = h(
 					textDecoration: 'underline',
 				},
 			},
-			'BillionMail'
+			'TezMail'
 		),
 	]
 )
