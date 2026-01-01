@@ -769,13 +769,19 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		}
 
 		// check if recipient is allowed to send with warmup
+		// This enforces warmup-compliant spacing between emails (only when warmup is enabled)
 		if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
-			if allow, waits, _ := warmup.RateLimiter().Allow(ctx, e.ctx.Value("serverIP").(string), public.GetMailProviderGroup(recipient.Recipient)); !allow {
-				if waits > 0 {
-					updates[recipient.Id] = waits * 2
+			allow, waitSeconds, _ := warmup.RateLimiter().Allow(ctx, e.ctx.Value("serverIP").(string), recipient.Recipient)
+
+			if !allow || waitSeconds > 0 {
+				// Always defer - never sleep inline (production-grade approach)
+				// Daily count is NOT incremented for deferred attempts
+				retryAfter := waitSeconds
+				if retryAfter < 60 {
+					retryAfter = 60 // Minimum 60 seconds (Gmail-safe during warm-up)
 				}
-				// rate limit exceeded, skip this recipient
-				g.Log().Debug(ctx, "Rate limit exceeded for recipient %d, wait for %d seconds after retry, skipping", recipient.Id, waits)
+				updates[recipient.Id] = retryAfter
+				g.Log().Debug(ctx, "Warmup: recipient %d deferred, retry after %d seconds", recipient.Id, retryAfter)
 				continue
 			}
 		}

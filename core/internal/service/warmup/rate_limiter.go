@@ -21,24 +21,54 @@ const (
 	counterExpireInDay = 24 * time.Hour
 )
 
-// tokenBucketLua is an atomic script for the token bucket rate limiter.
-// It refills tokens based on elapsed time and consumes one if available.
-const tokenBucketLua = `
--- KEYS[1] - The key for the token bucket hash
--- ARGV[1] - The capacity of the bucket
--- ARGV[2] - The refill rate (tokens per second)
--- ARGV[3] - The current timestamp (seconds)
--- ARGV[4] - The number of tokens to consume
+// tokenBucketWithSpacingLua is the atomic Lua script for warmup-compliant rate limiting.
+// It enforces:
+// 1. Spacing between emails (next_allowed_time with jitter) - prevents burst sending
+// 2. Token bucket for hourly limits - controls overall volume
+// 3. Standards-compliant initialization (max 5 tokens) - prevents burst on new IPs
+// 4. Uses Redis TIME for multi-node consistency - prevents clock drift issues
+//
+// This is critical for email warm-up compliance with Gmail, Outlook, Yahoo standards.
+const tokenBucketWithSpacingLua = `
+-- Warmup-compliant rate limiter with spacing enforcement
+-- KEYS[1] = bucket key, KEYS[2] = spacing key
+-- ARGV[1] = capacity, ARGV[2] = rate, ARGV[3] = unused (we use Redis TIME)
+-- ARGV[4] = tokens_requested, ARGV[5] = base_spacing_ms
 
-local key = KEYS[1]
+local bucket_key = KEYS[1]
+local spacing_key = KEYS[2]
 local capacity = tonumber(ARGV[1])
 local rate = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
 local requested = tonumber(ARGV[4])
+local base_spacing_ms = tonumber(ARGV[5])
 
-local bucket_info = redis.call('HGETALL', key)
-local last_tokens = capacity
-local last_refill_time = now
+-- SAFETY: Guard against rate == 0 (misconfig protection)
+if rate <= 0 then
+    return 3600  -- Hard wait fallback: 1 hour
+end
+
+-- USE REDIS TIME for consistency across nodes (prevents clock drift)
+local redis_time = redis.call('TIME')
+local now_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+
+-- STEP 1: Check spacing (MUST pass before token check)
+-- This enforces gradual sending - one email per spacing window per provider
+local next_allowed = redis.call('GET', spacing_key)
+if next_allowed then
+    next_allowed = tonumber(next_allowed)
+    if now_ms < next_allowed then
+        -- Return wait time in seconds (ceiling)
+        return math.ceil((next_allowed - now_ms) / 1000)
+    end
+end
+
+-- STEP 2: Token bucket check
+local bucket_info = redis.call('HGETALL', bucket_key)
+
+-- Standards-compliant init: min(max(2, 5%), 5) - never more than 5 tokens
+-- This prevents burst behavior on new IPs/domains during warm-up
+local last_tokens = math.min(math.max(2, math.floor(capacity * 0.05)), 5)
+local last_refill_time = now_ms
 
 if #bucket_info > 0 then
     for i = 1, #bucket_info, 2 do
@@ -50,25 +80,40 @@ if #bucket_info > 0 then
     end
 end
 
-local time_passed = now - last_refill_time
-local new_tokens = time_passed * rate
-
+-- Calculate current tokens with refill
+local time_passed_sec = (now_ms - last_refill_time) / 1000
+local new_tokens = time_passed_sec * rate
 local current_tokens = math.min(capacity, last_tokens + new_tokens)
 
-if current_tokens >= requested then
-    current_tokens = current_tokens - requested
-    redis.call('HSET', key, 'tokens', current_tokens, 'last_refill_time', now)
-    -- Set an expiration for safety, e.g., twice the time it takes to fill an empty bucket
-    local expiry = 86400 -- Default 24 hours
-    if rate > 0 then
-        expiry = math.ceil(capacity / rate * 2)
-    end
-    redis.call('EXPIRE', key, expiry)
-    return 1
-else
-    -- Not enough tokens, don't update anything, just return 0
-    return 0
+if current_tokens < requested then
+    -- Not enough tokens, return wait time
+    local tokens_needed = requested - current_tokens
+    local wait_sec = math.ceil(tokens_needed / rate)
+    return wait_sec
 end
+
+-- STEP 3: Consume token + calculate next_allowed with jitter
+-- Jitter: 0.8 to 1.3 (50% variance for human-like behavior)
+-- This makes sending patterns less robotic and more natural
+local jitter_seed = (now_ms % 100) / 200 + 0.8  -- 0.8 to 1.3
+local actual_spacing_ms = math.floor(base_spacing_ms * jitter_seed)
+local next_allowed_time = now_ms + actual_spacing_ms
+
+-- Update bucket
+current_tokens = current_tokens - requested
+redis.call('HSET', bucket_key, 'tokens', current_tokens, 'last_refill_time', now_ms)
+
+-- Store next_allowed_time with 6 hour TTL (survives restarts/pauses)
+redis.call('SET', spacing_key, next_allowed_time, 'EX', 21600)
+
+-- Set bucket expiry
+local expiry = 86400
+if rate > 0 then
+    expiry = math.ceil(capacity / rate * 2)
+end
+redis.call('EXPIRE', bucket_key, expiry)
+
+return 0  -- Success, allowed to send
 `
 
 // RateLimiterService provides rate limiting functionality for IP warmup.
@@ -87,9 +132,17 @@ func RateLimiter() *RateLimiterService {
 }
 
 // Allow checks if sending is allowed for the given sender IP and recipient.
-// It uses a hybrid approach:
+// It uses a warmup-compliant approach:
 // 1. Daily limit: using Redis's variable window counter to ensure the absolute daily quota is not exceeded.
-// 2. Hourly limit: using the token bucket algorithm to smooth the sending rate and allow short-term bursts.
+// 2. Hourly limit + Spacing: using token bucket with mandatory spacing between emails.
+//
+// Returns:
+//   - allow: true if sending is permitted
+//   - waits: seconds to wait before retry (0 if allowed)
+//   - err: any error encountered
+//
+// Note: Daily count is ONLY incremented on successful sends.
+// Deferred attempts do NOT count toward daily limit.
 func (s *RateLimiterService) Allow(ctx context.Context, senderIp string, recipientEmail string) (allow bool, waits int, err error) {
 	// Default wait time is 300 seconds (5 minutes), if not exceeded limit, it will be 0.
 	waits = 300
@@ -112,7 +165,6 @@ func (s *RateLimiterService) Allow(ctx context.Context, senderIp string, recipie
 
 	// 3. Check the daily limit (variable window counter)
 	var dailyCount int64
-	now := time.Now()
 	dailyKey := fmt.Sprintf("warmup:vw:d:%s:%s", senderIp, mailProviderGroup)
 
 	dailyCount, err = g.Redis().Incr(ctx, dailyKey)
@@ -127,43 +179,47 @@ func (s *RateLimiterService) Allow(ctx context.Context, senderIp string, recipie
 
 	if dailyCount > int64(dailyLimit) {
 		g.Log().Debugf(ctx, "RateLimiter: Daily limit exceeded for IP %s, Group %s. Count: %d, Limit: %d", senderIp, mailProviderGroup, dailyCount, dailyLimit)
-		// Note: We don't roll back the counter here, because the exceeded requests have indeed occurred.
-		// Keeping the counter in an exceeded state prevents subsequent requests.
 		return
 	}
 
-	// 4. Check the hourly limit (token bucket)
-	hourlyKey := fmt.Sprintf("warmup:tb:h:%s:%s", senderIp, mailProviderGroup)
+	// 4. Token bucket + spacing check (atomic Lua script)
+	// This is the core warmup-compliant logic that enforces gradual sending
+	bucketKey := fmt.Sprintf("warmup:tb:h:%s:%s", senderIp, mailProviderGroup)
+	spacingKey := fmt.Sprintf("warmup:spacing:%s:%s", senderIp, mailProviderGroup)
+
 	capacity := float64(hourlyLimit)
-	rate := capacity / 3600.0 // Tokens replenished per second
+	rate := capacity / 3600.0                    // Tokens per second
+	baseSpacingMs := int64(3600000 / hourlyLimit) // Base spacing in milliseconds (3600 sec * 1000 / hourly limit)
 
-	res, err := g.Redis().Eval(ctx, tokenBucketLua, 1, []string{hourlyKey}, []interface{}{
-		capacity,
-		rate,
-		now.Unix(),
-		1, // Consume 1 token
-	})
+	res, err := g.Redis().Eval(ctx, tokenBucketWithSpacingLua, 2,
+		[]string{bucketKey, spacingKey},
+		[]interface{}{
+			capacity,
+			rate,
+			0, // Unused - Lua uses Redis TIME now for multi-node consistency
+			1, // Consume 1 token
+			baseSpacingMs,
+		})
+
 	if err != nil {
-		g.Log().Errorf(ctx, "RateLimiter: Token bucket script failed for IP %s, Group %s: %v", senderIp, mailProviderGroup, err)
-		// Script failed, status unknown, roll back daily count and deny
+		g.Log().Errorf(ctx, "RateLimiter: Lua script failed for IP %s, Group %s: %v", senderIp, mailProviderGroup, err)
+		// Roll back daily count - send was not attempted
 		_, _ = g.Redis().Decr(ctx, dailyKey)
 		return
 	}
 
-	allowed := res.Int() == 1
-	if !allowed {
-		g.Log().Debugf(ctx, "RateLimiter: Hourly rate limit exceeded (token bucket) for IP %s, Group %s.", senderIp, mailProviderGroup)
-		// Not enough tokens in the bucket, roll back daily count
+	waitSeconds := res.Int()
+	if waitSeconds > 0 {
+		// Not allowed yet - spacing or token limit enforced
+		// Roll back daily count - send was not attempted (deferred attempts don't count)
 		_, _ = g.Redis().Decr(ctx, dailyKey)
-		// Calculate the wait time/seconds for the next available token
-		waits = int(float64(1)/rate) + 1
-		return
+		g.Log().Debugf(ctx, "RateLimiter: Spacing enforced for IP %s, Group %s. Wait %d seconds", senderIp, mailProviderGroup, waitSeconds)
+		return false, waitSeconds, nil
 	}
 
-	// 5. If all checks pass, allow sending.
+	// 5. Success - sending is allowed
 	allow = true
-	waits = 0 // No wait time, request is allowed
-
+	waits = 0
 	g.Log().Debugf(ctx, "RateLimiter: Allow send for IP %s, Group %s. Daily count: %d/%d", senderIp, mailProviderGroup, dailyCount, dailyLimit)
 	return
 }
