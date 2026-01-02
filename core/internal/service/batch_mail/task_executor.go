@@ -842,22 +842,23 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 
 	if len(updates) > 0 {
 		curTime := int(time.Now().Unix())
-		data := make([]map[string]interface{}, 0, len(updates))
 		i := 0
 		for id, waits := range updates {
-			data = append(data, g.Map{
-				"id":         id,
-				"task_id":    0,
-				"recipient":  "",
-				"message_id": "",
-				"sent_time":  curTime + (waits * ((i % 10) + 1)),
-			})
+			newSentTime := curTime + (waits * ((i % 10) + 1))
+			_, err := g.DB().Ctx(ctx).Model("recipient_info").
+				Where("id", id).
+				Data(g.Map{
+					"is_sent":   0,
+					"sent_time": newSentTime,
+				}).
+				Update()
+			if err != nil {
+				g.Log().Errorf(ctx, "Failed to defer recipient %d: %v", id, err)
+			} else {
+				g.Log().Debugf(ctx, "Deferred recipient %d, retry at %d", id, newSentTime)
+			}
 			i++
 		}
-		_, _ = g.DB().Ctx(ctx).Model("recipient_info").Data(data).OnConflict("id").OnDuplicate(g.Map{
-			"sent_time": gdb.Raw("excluded.sent_time"),
-			"is_sent":   0,
-		}).Save()
 	}
 
 	// all tasks submitted, start result processing and channel closure goroutine
