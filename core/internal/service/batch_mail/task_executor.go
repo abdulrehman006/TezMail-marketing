@@ -672,6 +672,7 @@ func (e *TaskExecutor) getNextRecipientBatch(ctx context.Context, taskId, lastId
 	err := g.DB().Model("recipient_info").
 		Where("task_id", taskId).
 		Where("is_sent", 0).
+		Where("sent_time <= ?", time.Now().Unix()).
 		Where("id > ?", lastId).
 		Order("id ASC").
 		Limit(batchSize).
@@ -855,6 +856,7 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		}
 		_, _ = g.DB().Ctx(ctx).Model("recipient_info").Data(data).OnConflict("id").OnDuplicate(g.Map{
 			"sent_time": gdb.Raw("excluded.sent_time"),
+			"is_sent":   0,
 		}).Save()
 	}
 
