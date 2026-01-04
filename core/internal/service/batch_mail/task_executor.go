@@ -844,7 +844,13 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		curTime := int(time.Now().Unix())
 		i := 0
 		for id, waits := range updates {
-			newSentTime := curTime + (waits * ((i % 10) + 1))
+			// Simple stagger: waits + i ensures unique sent_time for each recipient
+			// - waits: minimum wait from rate limiter (typically 60 sec)
+			// - i: adds 1 second per recipient to prevent duplicates
+			// This works for both small (20) and large (200K) campaigns:
+			// - Rate limiter controls actual sending speed
+			// - Unique sent_times prevent batch overload
+			newSentTime := curTime + waits + i
 			// Reset is_sent=0 and update sent_time for deferred recipients
 			_, _ = g.DB().Ctx(ctx).Model("recipient_info").
 				Where("id", id).
