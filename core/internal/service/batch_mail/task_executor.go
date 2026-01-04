@@ -682,10 +682,20 @@ func (e *TaskExecutor) getNextRecipientBatch(ctx context.Context, taskId, lastId
 		return recipients, err
 	}
 
-	// Note: We no longer mark recipients as is_sent=2 here.
-	// Instead, each recipient is marked as is_sent=2 only when we're about to send it.
-	// This allows deferred recipients (due to warmup rate limiting) to stay at is_sent=0
-	// with an updated sent_time for retry.
+	ids := make([]int, len(recipients))
+	for i, r := range recipients {
+		ids[i] = r.Id
+	}
+
+	_, err = g.DB().Model("recipient_info").
+		WhereIn("id", ids).
+		Data(g.Map{"is_sent": 2}).
+		Update()
+
+	if err != nil {
+		g.Log().Error(ctx, "Failed to mark recipients as fetched: %v", err)
+		return nil, err
+	}
 
 	return recipients, nil
 }
@@ -777,17 +787,6 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 			}
 		}
 
-		// Mark recipient as "being processed" (is_sent=2) before sending
-		// This prevents duplicate processing if another batch runs concurrently
-		_, err := g.DB().Ctx(ctx).Model("recipient_info").
-			Where("id", recipient.Id).
-			Data(g.Map{"is_sent": 2}).
-			Update()
-		if err != nil {
-			g.Log().Errorf(ctx, "Failed to mark recipient %d as processing: %v", recipient.Id, err)
-			continue
-		}
-
 		// create recipient copy to avoid closure problem
 		recipientBak := recipient
 
@@ -796,7 +795,7 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		sendWg.Add(1)
 
 		// submit to worker pool
-		err = e.pool.Submit(func() {
+		err := e.pool.Submit(func() {
 			defer e.wg.Done()
 			defer sendWg.Done()
 			// print task id
@@ -843,23 +842,22 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 
 	if len(updates) > 0 {
 		curTime := int(time.Now().Unix())
+		data := make([]map[string]interface{}, 0, len(updates))
 		i := 0
 		for id, waits := range updates {
-			newSentTime := curTime + (waits * ((i % 10) + 1))
-			// Deferred recipients stay at is_sent=0, just update sent_time for retry
-			_, err := g.DB().Ctx(ctx).Model("recipient_info").
-				Where("id", id).
-				Data(g.Map{
-					"sent_time": newSentTime,
-				}).
-				Update()
-			if err != nil {
-				g.Log().Errorf(ctx, "Failed to defer recipient %d: %v", id, err)
-			} else {
-				g.Log().Debugf(ctx, "Deferred recipient %d, retry at %d", id, newSentTime)
-			}
+			data = append(data, g.Map{
+				"id":         id,
+				"task_id":    0,
+				"recipient":  "",
+				"message_id": "",
+				"sent_time":  curTime + (waits * ((i % 10) + 1)),
+			})
 			i++
 		}
+		_, _ = g.DB().Ctx(ctx).Model("recipient_info").Data(data).OnConflict("id").OnDuplicate(g.Map{
+			"sent_time": gdb.Raw("excluded.sent_time"),
+			"is_sent":   0,
+		}).Save()
 	}
 
 	// all tasks submitted, start result processing and channel closure goroutine
