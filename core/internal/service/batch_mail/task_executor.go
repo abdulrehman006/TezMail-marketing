@@ -842,22 +842,19 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 
 	if len(updates) > 0 {
 		curTime := int(time.Now().Unix())
-		data := make([]map[string]interface{}, 0, len(updates))
 		i := 0
 		for id, waits := range updates {
-			data = append(data, g.Map{
-				"id":         id,
-				"task_id":    0,
-				"recipient":  "",
-				"message_id": "",
-				"sent_time":  curTime + (waits * ((i % 10) + 1)),
-			})
+			newSentTime := curTime + (waits * ((i % 10) + 1))
+			// Reset is_sent=0 and update sent_time for deferred recipients
+			_, _ = g.DB().Ctx(ctx).Model("recipient_info").
+				Where("id", id).
+				Data(g.Map{
+					"is_sent":   0,
+					"sent_time": newSentTime,
+				}).
+				Update()
 			i++
 		}
-		_, _ = g.DB().Ctx(ctx).Model("recipient_info").Data(data).OnConflict("id").OnDuplicate(g.Map{
-			"sent_time": gdb.Raw("excluded.sent_time"),
-			"is_sent":   0,
-		}).Save()
 	}
 
 	// all tasks submitted, start result processing and channel closure goroutine
