@@ -1,5 +1,5 @@
 <template>
-	<component :is="copyrightVNode"></component>
+	<component v-if="copyrightVNode" :is="copyrightVNode"></component>
 </template>
 
 <script lang="ts" setup>

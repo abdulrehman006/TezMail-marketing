@@ -76,9 +76,10 @@ type ToolDescription struct {
 }
 
 type ToolParameter struct {
-	Type       string                 `json:"type"`       // Type of the parameters (e.g., "object")
-	Properties map[string]interface{} `json:"properties"` // Properties of the parameters
-	Required   []string               `json:"required"`   // Required parameters
+	Type                 string                 `json:"type"`                 // Type of the parameters (e.g., "object")
+	Properties           map[string]interface{} `json:"properties"`           // Properties of the parameters
+	Required             []string               `json:"required"`             // Required parameters
+	AdditionalProperties bool                   `json:"additionalProperties"` // Must be false for OpenAI strict mode
 }
 
 type WebSearchParams struct {
@@ -163,7 +164,8 @@ func (o *OpenAI) RegisterWebSearchTool() openai.Tool {
 					"description": "The URL of the webpage to retrieve",
 				},
 			},
-			Required: []string{"url"},
+			Required:             []string{"url"},
+			AdditionalProperties: false, // Required by OpenAI for strict mode
 		},
 	}
 

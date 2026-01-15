@@ -764,13 +764,6 @@ func buildBlacklistAlertEmailHTML(ip, domain string, result *model.BlacklistChec
 					</ul>
 				</div>
 			</div>
-
-			<div class="footer">
-				<div>
-					<span>Powered by </span>
-					<a href="https://www.billionmail.com/" target="_blank">BillionMail</a>
-				</div>
-			</div>
 		</div>
 	</body>
 </html>

@@ -29,7 +29,7 @@ const isUnsubscribe = ref(false)
 
 const handleUnsubscribe = (val: boolean) => {
 	if (val) {
-		value.value = '{{ UnsubscribeURL . }}'
+		value.value = '{{ .UnsubscribeURL }}'
 	} else {
 		value.value = ''
 	}

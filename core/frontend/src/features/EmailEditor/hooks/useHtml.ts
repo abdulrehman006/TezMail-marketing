@@ -38,7 +38,10 @@ export const useHtml = () => {
 				table.appendChild(columnTrMap[columnKey].dom)
 			}
 		})
-		table.appendChild(cellToCopyright())
+		// Only add copyright row if copyrightVNode is defined
+		if (copyrightVNode) {
+			table.appendChild(cellToCopyright())
+		}
 		return table
 	}
 

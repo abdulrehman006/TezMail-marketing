@@ -152,7 +152,6 @@ func sendConfirmationEmail(ctx context.Context, email, name string) error {
         </div>
         <div class="footer">
             <p>This email was sent to %s</p>
-            <p>Powered by BillionMail</p>
         </div>
     </div>
 </body>

@@ -216,6 +216,7 @@ func (e *TemplateEngine) cleanUndefinedVariables(content string) string {
 		`\{\{\s*\.\s*Subscriber\s*\.\s*[^\s{}]+[^}]*}}`,
 		`\{\{\s*\.\s*Task\s*\.\s*[^\s{}]+[^}]*}}`,
 		`\{\{\s*\.\s*API\s*\.\s*[^\s{}]+[^}]*}}`,
+		`\{\{\s*\.\s*UnsubscribeURL\s*}}`,
 	}
 
 	allVarRegex := regexp.MustCompile(`\{\{[\s\S]*?}}`)

@@ -33,7 +33,7 @@ II. Mandatory Requirements
 - Compress CSS into single line before output (prevents client rendering issues)
 - Absolute prohibition of iframe tags
 - Ban all countdown designs (including CSS animation timers)
-- Unsubscribe link placeholder: ` + "`" + `<a href="{{ UnsubscribeURL . }}">Unsubscribe</a>` + "`" + `
+- Unsubscribe link placeholder: ` + "`" + `<a href="{{ .UnsubscribeURL }}">Unsubscribe</a>` + "`" + `
 - Max container width: 600px
 - Color distribution: Primary(60%) + Secondary(30%) + Accent(10%)
 - Content must include multi-layer modules (header/key message/CTAs/footer etc.)

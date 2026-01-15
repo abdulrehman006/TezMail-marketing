@@ -403,31 +403,4 @@ export const baseConfigMap = new Map<BlockType, BaseConfig>([
 	['menu', menuConfig],
 ])
 
-export const copyrightVNode = h(
-	'div',
-	{
-		style: {
-			display: 'block',
-			padding: '10px',
-			lineHeight: '140%',
-			color: '#999',
-			textAlign: 'center',
-			fontSize: '12px',
-		},
-	},
-	[
-		h('span', 'Powered by '),
-		h(
-			'a',
-			{
-				href: 'https://www.billionmail.com',
-				target: '_blank',
-				style: {
-					color: '#999',
-					textDecoration: 'underline',
-				},
-			},
-			'TezMail'
-		),
-	]
-)
+export const copyrightVNode = null

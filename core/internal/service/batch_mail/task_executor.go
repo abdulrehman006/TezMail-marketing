@@ -801,7 +801,7 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 			// print task id
 			//g.Log().Debug(ctx, "current task id", task.Id, "sender-", task.Addresser, "recipient-", recipientBak.Recipient)
 			// personalize content
-			personalized, _ := e.personalizeEmail(ctx, emailContent, task, recipientBak)
+			personalized, _, _ := e.personalizeEmail(ctx, emailContent, task, recipientBak)
 			//personalized := emailContent
 
 			// send email
@@ -1052,12 +1052,12 @@ func (e *TaskExecutor) getTemplateInfo(ctx context.Context, templateId int) (*en
 func (e *TaskExecutor) processEmailContent(ctx context.Context, content string, task *entity.EmailTask) string {
 	// process unsubscribe link
 	if task.Unsubscribe == 1 {
-		// __UNSUBSCRIBE_URL__  {{ UnsubscribeURL }}
-		if !strings.Contains(content, "__UNSUBSCRIBE_URL__") && !strings.Contains(content, "{{ UnsubscribeURL . }}") {
+		// __UNSUBSCRIBE_URL__  {{ .UnsubscribeURL }}
+		if !strings.Contains(content, "__UNSUBSCRIBE_URL__") && !strings.Contains(content, "{{ .UnsubscribeURL }}") {
 			content = public.AddUnsubscribeButton(content)
 		}
 
-		content = strings.ReplaceAll(content, "__UNSUBSCRIBE_URL__", "{{ UnsubscribeURL . }}")
+		content = strings.ReplaceAll(content, "__UNSUBSCRIBE_URL__", "{{ .UnsubscribeURL }}")
 	}
 
 	// Preparse the spintax template
@@ -1070,7 +1070,8 @@ func (e *TaskExecutor) processEmailContent(ctx context.Context, content string, 
 }
 
 // personalizeEmail personalize email content
-func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, task *entity.EmailTask, recipient *entity.RecipientInfo) (string, string) {
+// Returns: renderedContent, renderedSubject, unsubscribeURL
+func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, task *entity.EmailTask, recipient *entity.RecipientInfo) (string, string, string) {
 
 	var contact entity.Contact
 	// 优先按任务分组精确匹配，再按创建时间倒序获取最新一条
@@ -1098,6 +1099,7 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 
 	// Unsubscribe
 	var renderedContent, renderedSubject string
+	var unsubscribeJumpURL string
 	engine := GetTemplateEngine()
 
 	if task.Unsubscribe == 1 {
@@ -1118,7 +1120,6 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 			jwtToken = ""
 		}
 
-		var unsubscribeJumpURL string
 		if contactGroupId > 0 {
 
 			unsubscribeJumpURL = fmt.Sprintf("%s/unsubscribe_new.html?jwt=%s",
@@ -1165,7 +1166,7 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 	renderedContent = e.restoreErrorVariables(renderedContent)
 	renderedSubject = e.restoreErrorVariables(renderedSubject)
 
-	return renderedContent, renderedSubject
+	return renderedContent, renderedSubject, unsubscribeJumpURL
 }
 
 // restoreErrorVariables 恢复 [__变量__] 为 {{变量}}
@@ -1193,8 +1194,8 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		currentTask = e.taskConfig
 	}
 
-	// get rendered content and subject
-	renderedContent, renderedSubject := e.personalizeEmail(ctx, content, currentTask, recipient)
+	// get rendered content, subject and unsubscribe URL
+	renderedContent, renderedSubject, unsubscribeURL := e.personalizeEmail(ctx, content, currentTask, recipient)
 
 	sender, err := mail_service.NewEmailSenderWithLocal(currentTask.Addresser)
 	if err != nil {
@@ -1224,6 +1225,12 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 	// set sender display name
 	if currentTask.FullName != "" {
 		message.SetRealName(currentTask.FullName)
+	}
+
+	// Add List-Unsubscribe header for better deliverability (RFC 2369)
+	if unsubscribeURL != "" {
+		message.SetHeader("List-Unsubscribe", fmt.Sprintf("<%s>", unsubscribeURL))
+		message.SetHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 	}
 
 	//g.Log().Infof(ctx, "sendEmail - final check before sending: sender=%s, display_name=%s, subject=%s, recipient=%s",
@@ -1262,8 +1269,8 @@ func (e *TaskExecutor) sendEmailMock(ctx context.Context, task *entity.EmailTask
 		// Continue execution
 	}
 
-	// Get the rendered content and subject
-	renderedContent, renderedSubject := e.personalizeEmail(ctx, content, task, recipient)
+	// Get the rendered content, subject and unsubscribe URL
+	renderedContent, renderedSubject, _ := e.personalizeEmail(ctx, content, task, recipient)
 
 	sender, err := mail_service.NewEmailSenderWithLocal(task.Addresser)
 	if err != nil {

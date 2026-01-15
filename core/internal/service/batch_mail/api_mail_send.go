@@ -483,7 +483,7 @@ func processMailContentAndSubject(ctx context.Context, content, subject string, 
 	}
 
 	if apiTemplate.Unsubscribe == 1 {
-		if !strings.Contains(content, "__UNSUBSCRIBE_URL__") && !strings.Contains(content, "{{ UnsubscribeURL . }}") {
+		if !strings.Contains(content, "__UNSUBSCRIBE_URL__") && !strings.Contains(content, "{{ .UnsubscribeURL }}") {
 			content = public.AddUnsubscribeButton(content)
 		}
 
@@ -512,7 +512,7 @@ func processMailContentAndSubject(ctx context.Context, content, subject string, 
 				subject = renderedSubject
 			}
 		} else {
-			content = strings.ReplaceAll(content, "{{ UnsubscribeURL . }}", unsubscribeJumpURL)
+			content = strings.ReplaceAll(content, "{{ .UnsubscribeURL }}", unsubscribeJumpURL)
 		}
 	} else if contact.Id > 0 {
 		engine := GetTemplateEngine()
