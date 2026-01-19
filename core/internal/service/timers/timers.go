@@ -13,6 +13,7 @@ import (
 	"billionmail-core/internal/service/maillog_stat"
 	"billionmail-core/internal/service/multi_ip_domain"
 	"billionmail-core/internal/service/relay"
+	"billionmail-core/internal/service/ses_api"
 	"billionmail-core/internal/service/warmup"
 	"context"
 	"time"
@@ -191,6 +192,17 @@ func Start(ctx context.Context) (err error) {
 
 	gtimer.Add(24*time.Hour, func() {
 		log_maintenance.CompressAndCleanupLogs(ctx)
+	})
+
+	// Initialize Amazon SES API configuration and start periodic verification
+	gtimer.AddOnce(2*time.Second, func() {
+		if err := ses_api.Initialize(ctx); err != nil {
+			g.Log().Warning(ctx, "SES API initialization failed:", err)
+		} else {
+			g.Log().Info(ctx, "SES API initialized successfully")
+			// Start periodic verification in background
+			go ses_api.StartPeriodicVerification(ctx)
+		}
 	})
 
 	g.Log().Debug(ctx, "All timers started successfully")

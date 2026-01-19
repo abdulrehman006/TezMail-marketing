@@ -5,6 +5,10 @@ go 1.22.0
 toolchain go1.23.2
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.32.7
+	github.com/aws/aws-sdk-go-v2/config v1.28.7
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.48
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.40.1
 	github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5
 	github.com/docker/docker v28.0.2+incompatible
 	github.com/fsnotify/fsnotify v1.8.0

@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/maillog_stat"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/ses_api"
 	"billionmail-core/internal/service/warmup"
 	"context"
 	"errors"
@@ -1197,7 +1198,85 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 	// get rendered content, subject and unsubscribe URL
 	renderedContent, renderedSubject, unsubscribeURL := e.personalizeEmail(ctx, content, currentTask, recipient)
 
-	sender, err := mail_service.NewEmailSenderWithLocal(currentTask.Addresser)
+	// Generate message ID first (needed for both SMTP and SES)
+	messageID := generateMessageID(currentTask.Addresser)
+
+	//Tracking emails
+	baseURL := domains.GetBaseURL()
+	mail_tracker := maillog_stat.NewMailTracker(renderedContent, currentTask.Id, messageID, recipient.Recipient, baseURL)
+	mail_tracker.TrackLinks()
+	mail_tracker.AppendTrackingPixel()
+	renderedContent = mail_tracker.GetHTML()
+
+	// Try SES API first if configured for this domain
+	sesAccount := ses_api.GetAccountForDomain(currentTask.Addresser)
+	if sesAccount != nil {
+		return e.sendEmailViaSESApi(ctx, currentTask, recipient, renderedContent, renderedSubject, unsubscribeURL, messageID)
+	}
+
+	// Fall back to SMTP (existing behavior)
+	return e.sendEmailViaSMTP(ctx, currentTask, recipient, renderedContent, renderedSubject, unsubscribeURL, messageID)
+}
+
+// sendEmailViaSESApi sends email using Amazon SES API
+func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.EmailTask, recipient *entity.RecipientInfo, content, subject, unsubscribeURL, messageID string) *SendResult {
+	sesSender, accountName, err := ses_api.GetSenderForEmail(ctx, task.Addresser)
+	if err != nil {
+		g.Log().Error(ctx, "Failed to create SES sender for", task.Addresser, ":", err)
+		// Fall back to SMTP
+		return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
+	}
+
+	// Build From address with display name
+	fromAddress := task.Addresser
+	if task.FullName != "" {
+		fromAddress = fmt.Sprintf("%s <%s>", task.FullName, task.Addresser)
+	}
+
+	// Build custom headers
+	headers := make(map[string]string)
+	if unsubscribeURL != "" {
+		headers["List-Unsubscribe"] = fmt.Sprintf("<%s>", unsubscribeURL)
+		headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+	}
+
+	// Send via SES API
+	input := &ses_api.SendEmailInput{
+		From:      fromAddress,
+		To:        []string{recipient.Recipient},
+		Subject:   subject,
+		HtmlBody:  content,
+		Headers:   headers,
+		MessageID: messageID,
+	}
+
+	result := sesSender.SendEmail(ctx, input)
+
+	if !result.Success {
+		g.Log().Error(ctx, "SES API send failed for", recipient.Recipient, ":", result.Error)
+		// Note: We don't fall back to SMTP here because SES was explicitly configured
+		// If you want fallback on SES failure, uncomment below:
+		// return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
+		return &SendResult{
+			RecipientID: recipient.Id,
+			Success:     false,
+			Error:       result.Error,
+		}
+	}
+
+	g.Log().Debug(ctx, "Email sent via SES API (account:", accountName, ") to:", recipient.Recipient)
+
+	return &SendResult{
+		RecipientID: recipient.Id,
+		MessageID:   result.MessageID,
+		Success:     true,
+		Error:       nil,
+	}
+}
+
+// sendEmailViaSMTP sends email using traditional SMTP (existing behavior)
+func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailTask, recipient *entity.RecipientInfo, content, subject, unsubscribeURL, messageID string) *SendResult {
+	sender, err := mail_service.NewEmailSenderWithLocal(task.Addresser)
 	if err != nil {
 		g.Log().Error(ctx, "create email sender failed: %v", err)
 		return &SendResult{
@@ -1207,24 +1286,14 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		}
 	}
 	defer sender.Close()
-	// set message ID
-	messageID := sender.GenerateMessageID()
-
-	//Tracking emails
-	//baseURL := domains.GetBaseURLBySender(currentTask.Addresser)
-	baseURL := domains.GetBaseURL()
-	mail_tracker := maillog_stat.NewMailTracker(renderedContent, currentTask.Id, messageID, recipient.Recipient, baseURL)
-	mail_tracker.TrackLinks()
-	mail_tracker.AppendTrackingPixel()
-	renderedContent = mail_tracker.GetHTML()
 
 	// create email message with rendered subject
-	message := mail_service.NewMessage(renderedSubject, renderedContent)
+	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(messageID)
 
 	// set sender display name
-	if currentTask.FullName != "" {
-		message.SetRealName(currentTask.FullName)
+	if task.FullName != "" {
+		message.SetRealName(task.FullName)
 	}
 
 	// Add List-Unsubscribe header for better deliverability (RFC 2369)
@@ -1232,9 +1301,6 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		message.SetHeader("List-Unsubscribe", fmt.Sprintf("<%s>", unsubscribeURL))
 		message.SetHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 	}
-
-	//g.Log().Infof(ctx, "sendEmail - final check before sending: sender=%s, display_name=%s, subject=%s, recipient=%s",
-	//	currentTask.Addresser, currentTask.FullName, renderedSubject, recipient.Recipient)
 
 	// send email
 	err = sender.Send(message, []string{recipient.Recipient})
@@ -1253,6 +1319,20 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		Success:     true,
 		Error:       nil,
 	}
+}
+
+// generateMessageID generates a unique Message-ID for email
+func generateMessageID(senderEmail string) string {
+	randomID := grand.S(32)
+	timestampMillis := time.Now().UnixMilli()
+
+	domain := "tezmail"
+	parts := strings.SplitN(senderEmail, "@", 2)
+	if len(parts) > 1 {
+		domain = parts[1]
+	}
+
+	return fmt.Sprintf("<%d.%s@%s>", timestampMillis, randomID, domain)
 }
 
 // sendEmailMock simulates sending an email and records it in the database.
