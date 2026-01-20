@@ -3,6 +3,7 @@ package ses_api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -43,6 +44,15 @@ func VerifyAllAccounts(ctx context.Context) {
 
 // VerifyAccount verifies a single AWS SES account
 func VerifyAccount(ctx context.Context, accountName string, account *AccountConfig) {
+	// Skip if recently verified (within last 2 minutes) and status is connected
+	if account.Status == StatusConnected && account.LastVerified != "" {
+		lastVerified, err := time.Parse("2006-01-02 15:04:05", account.LastVerified)
+		if err == nil && time.Since(lastVerified) < 2*time.Minute {
+			g.Log().Debug(ctx, "Skipping SES account verification for", accountName, "- recently verified")
+			return
+		}
+	}
+
 	g.Log().Info(ctx, "Verifying SES account:", accountName)
 
 	// Update status to checking
@@ -60,8 +70,27 @@ func VerifyAccount(ctx context.Context, accountName string, account *AccountConf
 
 	client := sesv2.NewFromConfig(cfg)
 
-	// Step 1: Get account details to verify credentials
-	accountDetails, err := client.GetAccount(ctx, &sesv2.GetAccountInput{})
+	// Step 1: Get account details to verify credentials (with retry for rate limiting)
+	var accountDetails *sesv2.GetAccountOutput
+	var err error
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		accountDetails, err = client.GetAccount(ctx, &sesv2.GetAccountInput{})
+		if err == nil {
+			break
+		}
+		// Check if it's a rate limit error
+		if i < maxRetries-1 {
+			errStr := err.Error()
+			if strings.Contains(errStr, "TooManyRequests") || strings.Contains(errStr, "Rate exceeded") || strings.Contains(errStr, "429") {
+				waitTime := time.Duration((i+1)*5) * time.Second
+				g.Log().Warning(ctx, "SES rate limited, waiting", waitTime, "before retry")
+				time.Sleep(waitTime)
+				continue
+			}
+		}
+		break
+	}
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to connect: %v", err)
 		g.Log().Error(ctx, "SES account verification failed for", accountName, ":", err)
