@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -57,11 +58,13 @@ const (
 )
 
 var (
-	configPath     = ""
-	currentConfig  *SESConfig
-	configMutex    sync.RWMutex
-	configWatcher  *fsnotify.Watcher
-	watcherStarted bool
+	configPath      = ""
+	currentConfig   *SESConfig
+	configMutex     sync.RWMutex
+	configWatcher   *fsnotify.Watcher
+	watcherStarted  bool
+	isWriting       bool          // Flag to prevent reload during our own writes
+	writeMutex      sync.Mutex    // Separate mutex for write operations
 )
 
 // GetConfigPath returns the path to ses_config.json
@@ -100,8 +103,63 @@ func GetConfig() *SESConfig {
 	return currentConfig
 }
 
+// atomicWriteFile writes data to a file atomically by writing to a temp file first then renaming
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	// Write to temp file in same directory (ensures same filesystem for rename)
+	dir := filepath.Dir(path)
+	tempFile, err := os.CreateTemp(dir, ".ses_config_*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := tempFile.Name()
+
+	// Clean up temp file on error
+	defer func() {
+		if tempPath != "" {
+			os.Remove(tempPath)
+		}
+	}()
+
+	// Write data to temp file
+	if _, err := tempFile.Write(data); err != nil {
+		tempFile.Close()
+		return err
+	}
+
+	// Sync to disk
+	if err := tempFile.Sync(); err != nil {
+		tempFile.Close()
+		return err
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+
+	// Set permissions
+	if err := os.Chmod(tempPath, perm); err != nil {
+		return err
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempPath, path); err != nil {
+		return err
+	}
+
+	// Clear temp path so defer doesn't try to remove it
+	tempPath = ""
+	return nil
+}
+
 // SaveConfig saves the configuration back to file
 func SaveConfig(config *SESConfig) error {
+	writeMutex.Lock()
+	isWriting = true
+	defer func() {
+		isWriting = false
+		writeMutex.Unlock()
+	}()
+
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
@@ -112,7 +170,7 @@ func SaveConfig(config *SESConfig) error {
 		return err
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := atomicWriteFile(path, data, 0600); err != nil {
 		return err
 	}
 
@@ -122,6 +180,13 @@ func SaveConfig(config *SESConfig) error {
 
 // UpdateAccountStatus updates the status of a specific account and saves to file
 func UpdateAccountStatus(accountName string, status string, message string, verifiedDomains []string, quota *SendQuota) error {
+	writeMutex.Lock()
+	isWriting = true
+	defer func() {
+		isWriting = false
+		writeMutex.Unlock()
+	}()
+
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
@@ -148,14 +213,14 @@ func UpdateAccountStatus(accountName string, status string, message string, veri
 
 	currentConfig.LastChecked = time.Now().Format("2006-01-02 15:04:05")
 
-	// Save to file
+	// Save to file atomically
 	path := GetConfigPath()
 	data, err := json.MarshalIndent(currentConfig, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0600)
+	return atomicWriteFile(path, data, 0600)
 }
 
 // GetAccountForDomain returns the account configuration for a given sender domain
@@ -255,7 +320,18 @@ func StartConfigWatcher(ctx context.Context) error {
 					return
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write {
-					g.Log().Info(ctx, "SES config file changed, reloading...")
+					// Skip if we're the ones writing
+					writeMutex.Lock()
+					writing := isWriting
+					writeMutex.Unlock()
+					if writing {
+						continue
+					}
+
+					// Small delay to ensure file write is complete
+					time.Sleep(100 * time.Millisecond)
+
+					g.Log().Info(ctx, "SES config file changed externally, reloading...")
 					if _, err := LoadConfig(); err != nil {
 						g.Log().Error(ctx, "Failed to reload SES config:", err)
 					} else {
