@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,8 +13,39 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
+var (
+	// Global lock to prevent concurrent verification runs
+	verificationMutex    sync.Mutex
+	verificationRunning  bool
+	lastVerificationTime time.Time
+)
+
 // VerifyAllAccounts verifies all accounts in the configuration
 func VerifyAllAccounts(ctx context.Context) {
+	// Prevent concurrent verification runs
+	verificationMutex.Lock()
+	if verificationRunning {
+		verificationMutex.Unlock()
+		g.Log().Debug(ctx, "SES verification already running, skipping")
+		return
+	}
+	// Skip if we verified very recently (within 30 seconds)
+	if time.Since(lastVerificationTime) < 30*time.Second {
+		verificationMutex.Unlock()
+		g.Log().Debug(ctx, "SES verification ran recently, skipping")
+		return
+	}
+	verificationRunning = true
+	verificationMutex.Unlock()
+
+	// Ensure we clear the running flag when done
+	defer func() {
+		verificationMutex.Lock()
+		verificationRunning = false
+		lastVerificationTime = time.Now()
+		verificationMutex.Unlock()
+	}()
+
 	config := GetConfig()
 	if config == nil {
 		g.Log().Debug(ctx, "SES config not loaded, skipping verification")

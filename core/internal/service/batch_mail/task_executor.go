@@ -1266,9 +1266,58 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 
 	g.Log().Debug(ctx, "Email sent via SES API (account:", accountName, ") to:", recipient.Recipient)
 
+	// Record the SES-sent email in mailstat tables for statistics tracking
+	// Since SES API bypasses Postfix, we need to manually insert the stats
+	go func() {
+		nowMillis := time.Now().UnixMilli()
+		cleanMessageID := strings.Trim(messageID, "<>")
+
+		// Insert into mailstat_message_ids to map message_id
+		// Use SES message ID as postfix_message_id since there's no Postfix involved
+		sesPostfixID := "ses-" + result.MessageID
+		_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
+			"postfix_message_id": sesPostfixID,
+			"message_id":         cleanMessageID,
+			"log_time_millis":    nowMillis,
+		})
+		if err != nil {
+			g.Log().Debug(ctx, "Failed to insert SES message ID mapping:", err)
+		}
+
+		// Insert into mailstat_senders to record sender info
+		_, err = g.DB().Model("mailstat_senders").InsertIgnore(g.Map{
+			"postfix_message_id": sesPostfixID,
+			"sender":             task.Addresser,
+			"size":               len(content),
+			"log_time_millis":    nowMillis,
+		})
+		if err != nil {
+			g.Log().Debug(ctx, "Failed to insert SES sender stats:", err)
+		}
+
+		// Insert into mailstat_send_mails with status 'sent'
+		_, err = g.DB().Model("mailstat_send_mails").InsertIgnore(g.Map{
+			"postfix_message_id": sesPostfixID,
+			"recipient":          recipient.Recipient,
+			"mail_provider":      public.GetMailProviderGroup(recipient.Recipient),
+			"status":             "sent",
+			"delay":              0,
+			"delays":             "0/0/0/0",
+			"dsn":                "2.0.0",
+			"relay":              "ses-api[" + accountName + "]",
+			"description":        "Delivered via Amazon SES API",
+			"log_time_millis":    nowMillis,
+		})
+		if err != nil {
+			g.Log().Debug(ctx, "Failed to insert SES send stats:", err)
+		}
+	}()
+
+	// Return the original messageID we generated (not the SES message ID)
+	// This ensures recipient_info.message_id matches mailstat_message_ids.message_id
 	return &SendResult{
 		RecipientID: recipient.Id,
-		MessageID:   result.MessageID,
+		MessageID:   messageID,
 		Success:     true,
 		Error:       nil,
 	}
