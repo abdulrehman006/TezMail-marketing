@@ -94,11 +94,13 @@ func VerifyAccount(ctx context.Context, accountName string, account *AccountConf
 	if !sendingEnabled {
 		statusMsg = fmt.Sprintf("Warning: Sending is DISABLED - %d domains verified", len(verifiedDomains))
 		// Check enforcement status using string comparison for compatibility
-		enforcementStatus := string(accountDetails.EnforcementStatus)
-		if enforcementStatus == "SHUTDOWN" {
-			statusMsg = "Account is in SHUTDOWN status - contact AWS support"
-		} else if enforcementStatus == "PROBATION" {
-			statusMsg = fmt.Sprintf("Account is on PROBATION - %d domains verified", len(verifiedDomains))
+		if accountDetails.EnforcementStatus != nil {
+			enforcementStatus := *accountDetails.EnforcementStatus
+			if enforcementStatus == "SHUTDOWN" {
+				statusMsg = "Account is in SHUTDOWN status - contact AWS support"
+			} else if enforcementStatus == "PROBATION" {
+				statusMsg = fmt.Sprintf("Account is on PROBATION - %d domains verified", len(verifiedDomains))
+			}
 		}
 	} else {
 		statusMsg = fmt.Sprintf("Verified OK - %d domains available", len(verifiedDomains))
