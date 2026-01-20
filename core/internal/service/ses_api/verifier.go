@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
-	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/gogf/gf/v2/frame/g"
 )
 
@@ -94,9 +93,11 @@ func VerifyAccount(ctx context.Context, accountName string, account *AccountConf
 	var statusMsg string
 	if !sendingEnabled {
 		statusMsg = fmt.Sprintf("Warning: Sending is DISABLED - %d domains verified", len(verifiedDomains))
-		if accountDetails.EnforcementStatus == types.AccountDetailsStatusShutdown {
+		// Check enforcement status using string comparison for compatibility
+		enforcementStatus := string(accountDetails.EnforcementStatus)
+		if enforcementStatus == "SHUTDOWN" {
 			statusMsg = "Account is in SHUTDOWN status - contact AWS support"
-		} else if accountDetails.EnforcementStatus == types.AccountDetailsStatusProbation {
+		} else if enforcementStatus == "PROBATION" {
 			statusMsg = fmt.Sprintf("Account is on PROBATION - %d domains verified", len(verifiedDomains))
 		}
 	} else {
