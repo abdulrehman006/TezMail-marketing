@@ -262,20 +262,20 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		warmupAssociated = true
 
 		// Determine warmup identity based on sending method
-		// - If SES is configured AND SMTP is NOT available → use domain-based warmup
-		// - If SMTP is available (as primary or fallback) → use IP-based warmup
+		// Sending logic prioritizes SES API if configured, so warmup should match:
+		// - If SES is configured → use domain-based warmup (SES API will be used for sending)
+		// - Else if SMTP is available → use IP-based warmup
 		sesAccount := ses_api.GetAccountForDomain(task.Addresser)
-		smtpAvailable := mail_service.IsSMTPAvailable(task.Addresser)
 
-		if sesAccount != nil && !smtpAvailable {
-			// Only SES available (no SMTP fallback) → domain-based warmup
+		if sesAccount != nil {
+			// SES configured → use domain-based warmup (matches sending priority)
 			domain := extractDomainFromEmail(task.Addresser)
 			if domain != "" {
 				warmupIdentity = fmt.Sprintf("ses:%s:%s", sesAccount.Name, domain)
 				g.Log().Infof(ctx, "Task %d: Using SES domain-based warmup rate limiting: %s", taskId, warmupIdentity)
 			}
-		} else if smtpAvailable {
-			// SMTP available (as primary or fallback) → IP-based warmup
+		} else if mail_service.IsSMTPAvailable(task.Addresser) {
+			// No SES, but SMTP available → IP-based warmup
 			warmupIdentity, _ = public.GetServerIP()
 			g.Log().Debugf(ctx, "Task %d: Using IP-based warmup rate limiting: %s", taskId, warmupIdentity)
 		}
