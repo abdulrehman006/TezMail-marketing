@@ -205,8 +205,8 @@ export async function sendChat(store: TemplateStore, e?: KeyboardEvent) {
 			'/askai/chat/chat',
 			{
 				chatId: chatId.value,
-				supplierName: currentModel.value.supplierName,
-				modelId: currentModel.value.modelId,
+				supplier_name: currentModel.value.supplierName,
+				model_id: currentModel.value.modelId,
 				content: chatContent,
 				is_text: 'false',
 			},

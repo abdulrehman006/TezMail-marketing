@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -314,13 +315,28 @@ func GetCloudModels(supplierName string) {
 
 	// Process the response data
 	for _, model := range response.Data {
+		// Skip non-chat models (TTS, embedding, DALL-E, whisper, etc.)
+		modelId := strings.ToLower(model.ID)
+		if strings.Contains(modelId, "tts") ||
+			strings.Contains(modelId, "whisper") ||
+			strings.Contains(modelId, "dall-e") ||
+			strings.Contains(modelId, "embedding") ||
+			strings.Contains(modelId, "davinci") ||
+			strings.Contains(modelId, "babbage") ||
+			strings.Contains(modelId, "ada") ||
+			strings.Contains(modelId, "curie") ||
+			strings.Contains(modelId, "moderation") ||
+			strings.Contains(modelId, "realtime") {
+			continue // Skip non-LLM models
+		}
+
 		// Map the API response to the ModelInfo struct
 		modelInfo := ModelInfo{
 			Title:        "",
 			SupplierName: supplierName,
 			ModelId:      model.ID,
 			MaxTokens:    8192,
-			Capability:   []string{"llm"}, // Default capability, can be updated later
+			Capability:   []string{"llm"}, // Chat/completion capable models only
 			Status:       true,
 		}
 		// Save or update the model information
@@ -356,8 +372,9 @@ func Models(supplierName string) []ModelInfo {
 	models := make([]ModelInfo, 0)
 	for _, supplier := range supplierList {
 		supplierModels := GetModelList(supplier)
-		if len(supplierModels) == 0 && isCheckStatus == false {
-			// 自动从供应商API获取模型列表
+		if len(supplierModels) == 0 {
+			// Auto-fetch models from supplier API when no models exist
+			// GetCloudModels already checks if supplier is properly configured
 			GetCloudModels(supplier)
 			supplierModels = GetModelList(supplier) // Re-fetch after getting cloud models
 		}

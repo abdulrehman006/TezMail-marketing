@@ -134,12 +134,16 @@ var SYSTEM_PROMPT_TOKENS = 0
 
 // GetClient returns the OpenAI client
 func (o *OpenAI) GetClient() *openai.Client {
-	if o.SupplierName == "openai" {
+	// Use case-insensitive comparison and handle empty baseUrl
+	supplierLower := strings.ToLower(o.SupplierName)
+	if supplierLower == "openai" && (o.BaseUrl == "" || strings.Contains(strings.ToLower(o.BaseUrl), "api.openai.com")) {
+		// Use default OpenAI client when supplier is OpenAI with empty or default base URL
 		o.Client = openai.NewClient(o.ApiKey)
 	} else {
 		config := openai.DefaultConfig(o.ApiKey)
-		config.BaseURL = o.BaseUrl
-
+		if o.BaseUrl != "" {
+			config.BaseURL = o.BaseUrl
+		}
 		o.Client = openai.NewClientWithConfig(config)
 	}
 	return o.Client

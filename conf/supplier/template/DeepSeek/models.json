@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "title": "DeepSeek Chat",
+    "supplierName": "DeepSeek",
+    "modelId": "deepseek-chat",
+    "max_tokens": 64000,
+    "capability": ["llm"],
+    "status": true
+  },
+  {
+    "title": "DeepSeek Reasoner",
+    "supplierName": "DeepSeek",
+    "modelId": "deepseek-reasoner",
+    "max_tokens": 64000,
+    "capability": ["llm"],
+    "status": true
+  }
+]

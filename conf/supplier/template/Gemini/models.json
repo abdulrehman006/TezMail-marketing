@@ -1,2 +1,26 @@
 [
+  {
+    "title": "Gemini 2.0 Flash",
+    "supplierName": "Gemini",
+    "modelId": "gemini-2.0-flash",
+    "max_tokens": 1000000,
+    "capability": ["llm"],
+    "status": true
+  },
+  {
+    "title": "Gemini 1.5 Pro",
+    "supplierName": "Gemini",
+    "modelId": "gemini-1.5-pro",
+    "max_tokens": 2000000,
+    "capability": ["llm"],
+    "status": true
+  },
+  {
+    "title": "Gemini 1.5 Flash",
+    "supplierName": "Gemini",
+    "modelId": "gemini-1.5-flash",
+    "max_tokens": 1000000,
+    "capability": ["llm"],
+    "status": true
+  }
 ]

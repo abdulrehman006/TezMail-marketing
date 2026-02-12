@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "title": "Grok 2",
+    "supplierName": "Grok",
+    "modelId": "grok-2-latest",
+    "max_tokens": 131072,
+    "capability": ["llm"],
+    "status": true
+  },
+  {
+    "title": "Grok 2 Vision",
+    "supplierName": "Grok",
+    "modelId": "grok-2-vision-latest",
+    "max_tokens": 32768,
+    "capability": ["llm"],
+    "status": true
+  }
+]
