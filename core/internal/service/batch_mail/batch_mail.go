@@ -3,8 +3,10 @@ package batch_mail
 import (
 	"billionmail-core/api/batch_mail/v1"
 	"billionmail-core/internal/model/entity"
+	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/maillog_stat"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/ses_api"
 	"billionmail-core/internal/service/warmup"
 	"context"
 	"fmt"
@@ -163,12 +165,30 @@ func CreateTask(ctx context.Context, args CreateTaskArgs) (int, error) {
 	id, err := result.LastInsertId()
 
 	if err == nil && args.Warmup == 1 {
-		// link to sender ip warmup
-		serverIP, _ := public.GetServerIP()
+		// Determine warmup identity based on sending method
+		// - If SES is configured AND SMTP is NOT available → use domain-based warmup
+		// - If SMTP is available (as primary or fallback) → use IP-based warmup
+		sesAccount := ses_api.GetAccountForDomain(args.Addresser)
+		smtpAvailable := mail_service.IsSMTPAvailable(args.Addresser)
 
-		if serverIP != "" {
-			_, err = warmup.WarmupCampaign().AssociateCampaignWithWarmup(ctx, id, serverIP)
+		var warmupIdentity string
 
+		if sesAccount != nil && !smtpAvailable {
+			// Only SES available (no SMTP fallback) → domain-based warmup
+			domain := extractDomainFromEmail(args.Addresser)
+			if domain != "" {
+				warmupIdentity = fmt.Sprintf("ses:%s:%s", sesAccount.Name, domain)
+				g.Log().Infof(ctx, "Using SES domain-based warmup for task %d: %s", id, warmupIdentity)
+			}
+		} else if smtpAvailable {
+			// SMTP available (as primary or fallback) → IP-based warmup
+			warmupIdentity, _ = public.GetServerIP()
+			g.Log().Debugf(ctx, "Using IP-based warmup for task %d: %s", id, warmupIdentity)
+		}
+		// else: Neither SES nor SMTP available, no warmup
+
+		if warmupIdentity != "" {
+			_, err = warmup.WarmupCampaign().AssociateCampaignWithWarmup(ctx, id, warmupIdentity)
 			if err != nil {
 				g.Log().Warning(ctx, "Failed to associate campaign with warmup for task ID %d: %v", id, err)
 				err = nil
@@ -504,8 +524,29 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 		}
 
 		if req.Warmup == 1 {
-			if serverIP, _ := public.GetServerIP(); serverIP != "" {
-				if _, e2 := warmup.WarmupCampaign().AssociateCampaignWithWarmup(ctx, int64(taskId), serverIP); e2 != nil {
+			// Determine warmup identity based on sending method
+			// - If SES is configured AND SMTP is NOT available → use domain-based warmup
+			// - If SMTP is available (as primary or fallback) → use IP-based warmup
+			sesAccount := ses_api.GetAccountForDomain(req.Addresser)
+			smtpAvailable := mail_service.IsSMTPAvailable(req.Addresser)
+
+			var warmupIdentity string
+
+			if sesAccount != nil && !smtpAvailable {
+				// Only SES available (no SMTP fallback) → domain-based warmup
+				domain := extractDomainFromEmail(req.Addresser)
+				if domain != "" {
+					warmupIdentity = fmt.Sprintf("ses:%s:%s", sesAccount.Name, domain)
+					g.Log().Infof(ctx, "Using SES domain-based warmup for task %d: %s", taskId, warmupIdentity)
+				}
+			} else if smtpAvailable {
+				// SMTP available (as primary or fallback) → IP-based warmup
+				warmupIdentity, _ = public.GetServerIP()
+				g.Log().Debugf(ctx, "Using IP-based warmup for task %d: %s", taskId, warmupIdentity)
+			}
+
+			if warmupIdentity != "" {
+				if _, e2 := warmup.WarmupCampaign().AssociateCampaignWithWarmup(ctx, int64(taskId), warmupIdentity); e2 != nil {
 					g.Log().Warning(ctx, "Failed to associate campaign with warmup for task ID %d: %v", taskId, e2)
 				}
 			}
@@ -741,6 +782,15 @@ func GetTaskTagIds(tagIdsStr string) []int {
 	}
 
 	return tagIds
+}
+
+// extractDomainFromEmail extracts the domain part from an email address
+func extractDomainFromEmail(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) == 2 {
+		return strings.ToLower(parts[1])
+	}
+	return ""
 }
 
 // GetGroupsByIds get groups by IDs

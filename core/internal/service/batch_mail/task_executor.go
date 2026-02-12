@@ -254,13 +254,35 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		e.isPaused.Store(true)
 	}
 
-	// check campaign warmup association
+	// check campaign warmup association and determine warmup identity
 	warmupAssociated := false
+	var warmupIdentity string
+
 	if warmupStat, _ := warmup.WarmupCampaign().GetWarmupStatusForCampaign(ctx, int64(taskId)); warmupStat != nil {
 		warmupAssociated = true
+
+		// Determine warmup identity based on sending method
+		// - If SES is configured AND SMTP is NOT available → use domain-based warmup
+		// - If SMTP is available (as primary or fallback) → use IP-based warmup
+		sesAccount := ses_api.GetAccountForDomain(task.Addresser)
+		smtpAvailable := mail_service.IsSMTPAvailable(task.Addresser)
+
+		if sesAccount != nil && !smtpAvailable {
+			// Only SES available (no SMTP fallback) → domain-based warmup
+			domain := extractDomainFromEmail(task.Addresser)
+			if domain != "" {
+				warmupIdentity = fmt.Sprintf("ses:%s:%s", sesAccount.Name, domain)
+				g.Log().Infof(ctx, "Task %d: Using SES domain-based warmup rate limiting: %s", taskId, warmupIdentity)
+			}
+		} else if smtpAvailable {
+			// SMTP available (as primary or fallback) → IP-based warmup
+			warmupIdentity, _ = public.GetServerIP()
+			g.Log().Debugf(ctx, "Task %d: Using IP-based warmup rate limiting: %s", taskId, warmupIdentity)
+		}
 	}
 
 	e.ctx = context.WithValue(e.ctx, "warmupAssociated", warmupAssociated)
+	e.ctx = context.WithValue(e.ctx, "warmupIdentity", warmupIdentity)
 
 	// configure rate controller
 	e.configureRateController(task)
@@ -773,18 +795,29 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		// check if recipient is allowed to send with warmup
 		// This enforces warmup-compliant spacing between emails (only when warmup is enabled)
 		if warmupAssociated, ok := e.ctx.Value("warmupAssociated").(bool); ok && warmupAssociated {
-			allow, waitSeconds, _ := warmup.RateLimiter().Allow(ctx, e.ctx.Value("serverIP").(string), recipient.Recipient)
+			// Determine warmup identity based on sending method
+			var warmupIdentity string
+			if identity, ok := e.ctx.Value("warmupIdentity").(string); ok && identity != "" {
+				warmupIdentity = identity
+			} else {
+				// Fallback to server IP (legacy behavior)
+				warmupIdentity, _ = e.ctx.Value("serverIP").(string)
+			}
 
-			if !allow || waitSeconds > 0 {
-				// Always defer - never sleep inline (production-grade approach)
-				// Daily count is NOT incremented for deferred attempts
-				retryAfter := waitSeconds
-				if retryAfter < 60 {
-					retryAfter = 60 // Minimum 60 seconds (Gmail-safe during warm-up)
+			if warmupIdentity != "" {
+				allow, waitSeconds, _ := warmup.RateLimiter().Allow(ctx, warmupIdentity, recipient.Recipient)
+
+				if !allow || waitSeconds > 0 {
+					// Always defer - never sleep inline (production-grade approach)
+					// Daily count is NOT incremented for deferred attempts
+					retryAfter := waitSeconds
+					if retryAfter < 60 {
+						retryAfter = 60 // Minimum 60 seconds (Gmail-safe during warm-up)
+					}
+					updates[recipient.Id] = retryAfter
+					g.Log().Debug(ctx, "Warmup: recipient %d deferred, retry after %d seconds", recipient.Id, retryAfter)
+					continue
 				}
-				updates[recipient.Id] = retryAfter
-				g.Log().Debug(ctx, "Warmup: recipient %d deferred, retry after %d seconds", recipient.Id, retryAfter)
-				continue
 			}
 		}
 
@@ -1254,9 +1287,59 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 
 	if !result.Success {
 		g.Log().Error(ctx, "SES API send failed for", recipient.Recipient, ":", result.Error)
-		// Note: We don't fall back to SMTP here because SES was explicitly configured
-		// If you want fallback on SES failure, uncomment below:
-		// return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
+
+		// Record SES failure in mailstat tables for statistics tracking
+		go func() {
+			nowMillis := time.Now().UnixMilli()
+			cleanMessageID := strings.Trim(messageID, "<>")
+			sesPostfixID := "ses-fail-" + fmt.Sprintf("%d", nowMillis)
+
+			// Insert into mailstat_message_ids
+			_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
+				"postfix_message_id": sesPostfixID,
+				"message_id":         cleanMessageID,
+				"log_time_millis":    nowMillis,
+			})
+			if err != nil {
+				g.Log().Warning(ctx, "Failed to insert SES failure message ID mapping:", err)
+			}
+
+			// Insert into mailstat_senders
+			_, err = g.DB().Model("mailstat_senders").InsertIgnore(g.Map{
+				"postfix_message_id": sesPostfixID,
+				"sender":             task.Addresser,
+				"size":               len(content),
+				"log_time_millis":    nowMillis,
+			})
+			if err != nil {
+				g.Log().Warning(ctx, "Failed to insert SES failure sender stats:", err)
+			}
+
+			// Insert into mailstat_send_mails with status 'bounced'
+			errorDesc := "SES API error"
+			if result.Error != nil {
+				errorDesc = result.Error.Error()
+				if len(errorDesc) > 200 {
+					errorDesc = errorDesc[:200]
+				}
+			}
+			_, err = g.DB().Model("mailstat_send_mails").InsertIgnore(g.Map{
+				"postfix_message_id": sesPostfixID,
+				"recipient":          recipient.Recipient,
+				"mail_provider":      public.GetMailProviderGroup(recipient.Recipient),
+				"status":             "bounced",
+				"delay":              0,
+				"delays":             "0/0/0/0",
+				"dsn":                "5.0.0",
+				"relay":              "ses-api[" + accountName + "]",
+				"description":        errorDesc,
+				"log_time_millis":    nowMillis,
+			})
+			if err != nil {
+				g.Log().Warning(ctx, "Failed to insert SES failure send stats:", err)
+			}
+		}()
+
 		return &SendResult{
 			RecipientID: recipient.Id,
 			Success:     false,
@@ -1281,7 +1364,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 			"log_time_millis":    nowMillis,
 		})
 		if err != nil {
-			g.Log().Debug(ctx, "Failed to insert SES message ID mapping:", err)
+			g.Log().Warning(ctx, "Failed to insert SES message ID mapping:", err)
 		}
 
 		// Insert into mailstat_senders to record sender info
@@ -1292,7 +1375,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 			"log_time_millis":    nowMillis,
 		})
 		if err != nil {
-			g.Log().Debug(ctx, "Failed to insert SES sender stats:", err)
+			g.Log().Warning(ctx, "Failed to insert SES sender stats:", err)
 		}
 
 		// Insert into mailstat_send_mails with status 'sent'
@@ -1309,7 +1392,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 			"log_time_millis":    nowMillis,
 		})
 		if err != nil {
-			g.Log().Debug(ctx, "Failed to insert SES send stats:", err)
+			g.Log().Warning(ctx, "Failed to insert SES send stats:", err)
 		}
 	}()
 

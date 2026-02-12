@@ -170,6 +170,20 @@ func PasswordPlainByEmail(ctx context.Context, email string) (string, error) {
 	return string(plainBytes), nil
 }
 
+// IsSMTPAvailable checks if SMTP/mailbox is configured for a sender email.
+// Returns true if the mailbox exists and is active with valid credentials.
+func IsSMTPAvailable(senderEmail string) bool {
+	val, err := g.DB().Model("mailbox").
+		Where("username", strings.ToLower(senderEmail)).
+		Where("active", 1).
+		Value("password_encode")
+
+	if err != nil || val.IsEmpty() {
+		return false
+	}
+	return true
+}
+
 // Close closes the SMTP connection
 func (e *EmailSender) Close() {
 	_ = e.Disconnect()
