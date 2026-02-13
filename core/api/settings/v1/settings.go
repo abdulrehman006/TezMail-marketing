@@ -294,3 +294,95 @@ type SetBlacklistAlertSettingsReq struct {
 type SetBlacklistAlertSettingsRes struct {
 	api_v1.StandardRes
 }
+
+// ============== SES Settings API ==============
+
+// SESAccount represents an AWS SES account configuration
+type SESAccount struct {
+	Id                   int64    `json:"id" dc:"Account ID"`
+	Name                 string   `json:"name" dc:"Account name" v:"required|min-length:1|max-length:100"`
+	Description          string   `json:"description" dc:"Account description"`
+	Region               string   `json:"region" dc:"AWS region" v:"required"`
+	AccessKey            string   `json:"access_key" dc:"AWS access key" v:"required"`
+	SecretKey            string   `json:"secret_key" dc:"AWS secret key"`
+	Enabled              bool     `json:"enabled" dc:"Account enabled status"`
+	Status               string   `json:"status" dc:"Connection status"`
+	StatusMessage        string   `json:"status_message" dc:"Status message"`
+	LastVerified         string   `json:"last_verified" dc:"Last verification time"`
+	VerifiedDomains      []string `json:"verified_domains" dc:"Verified domains"`
+	SendQuota            *SESQuota `json:"send_quota" dc:"Send quota"`
+	CheckIntervalMinutes int      `json:"check_interval_minutes" dc:"Check interval in minutes"`
+	Domains              []string `json:"domains" dc:"Mapped domains"`
+	CreatedAt            string   `json:"created_at" dc:"Created time"`
+	UpdatedAt            string   `json:"updated_at" dc:"Updated time"`
+}
+
+type SESQuota struct {
+	Max24HourSend   float64 `json:"max_24_hour_send" dc:"Max 24 hour send"`
+	MaxSendRate     float64 `json:"max_send_rate" dc:"Max send rate"`
+	SentLast24Hours float64 `json:"sent_last_24_hours" dc:"Sent last 24 hours"`
+}
+
+// Get SES configuration request
+type GetSESConfigReq struct {
+	g.Meta        `path:"/settings/get_ses_config" tags:"Settings" method:"get" summary:"Get SES configuration"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+}
+
+type GetSESConfigRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Accounts []SESAccount `json:"accounts" dc:"SES accounts"`
+	} `json:"data" dc:"SES configuration data"`
+}
+
+// Save SES account request
+type SaveSESAccountReq struct {
+	g.Meta               `path:"/settings/save_ses_account" tags:"Settings" method:"post" summary:"Save SES account"`
+	Authorization        string   `json:"authorization" dc:"Authorization" in:"header"`
+	Id                   int64    `json:"id" dc:"Account ID (0 for new)"`
+	Name                 string   `json:"name" dc:"Account name" v:"required|min-length:1|max-length:100"`
+	Description          string   `json:"description" dc:"Account description"`
+	Region               string   `json:"region" dc:"AWS region" v:"required"`
+	AccessKey            string   `json:"access_key" dc:"AWS access key" v:"required"`
+	SecretKey            string   `json:"secret_key" dc:"AWS secret key"`
+	Enabled              bool     `json:"enabled" dc:"Account enabled status"`
+	CheckIntervalMinutes int      `json:"check_interval_minutes" dc:"Check interval in minutes"`
+	Domains              []string `json:"domains" dc:"Mapped domains"`
+}
+
+type SaveSESAccountRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Account SESAccount `json:"account" dc:"Saved SES account"`
+	} `json:"data" dc:"Saved account data"`
+}
+
+// Delete SES account request
+type DeleteSESAccountReq struct {
+	g.Meta        `path:"/settings/delete_ses_account" tags:"Settings" method:"post" summary:"Delete SES account"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Id            int64  `json:"id" dc:"Account ID" v:"required|min:1"`
+}
+
+type DeleteSESAccountRes struct {
+	api_v1.StandardRes
+}
+
+// Test SES connection request
+type TestSESConnectionReq struct {
+	g.Meta        `path:"/settings/test_ses_connection" tags:"Settings" method:"post" summary:"Test SES connection"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Region        string `json:"region" dc:"AWS region" v:"required"`
+	AccessKey     string `json:"access_key" dc:"AWS access key" v:"required"`
+	SecretKey     string `json:"secret_key" dc:"AWS secret key" v:"required"`
+}
+
+type TestSESConnectionRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Status          string   `json:"status" dc:"Connection status"`
+		VerifiedDomains []string `json:"verified_domains" dc:"Verified domains"`
+		SendQuota       *SESQuota `json:"send_quota" dc:"Send quota"`
+	} `json:"data" dc:"Test result"`
+}

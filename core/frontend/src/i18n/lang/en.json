@@ -1434,6 +1434,39 @@
 					"disableContent": "Do you want to disable API settings?"
 				}
 			},
+			"ses": {
+				"title": "AWS SES API Settings",
+				"description": "Configure AWS SES API credentials for sending emails via Amazon Simple Email Service.",
+				"addAccount": "Add SES Account",
+				"editAccount": "Edit SES Account",
+				"noAccounts": "No SES accounts configured",
+				"name": "Account Name",
+				"namePlaceholder": "Enter account name",
+				"nameRequired": "Account name is required",
+				"description": "Description",
+				"descriptionPlaceholder": "Optional description",
+				"region": "AWS Region",
+				"regionPlaceholder": "Select AWS region",
+				"regionRequired": "AWS region is required",
+				"accessKey": "Access Key",
+				"accessKeyPlaceholder": "Enter AWS access key",
+				"accessKeyRequired": "Access key is required",
+				"secretKey": "Secret Key",
+				"secretKeyPlaceholder": "Enter AWS secret key",
+				"secretKeyPlaceholderEdit": "Leave empty to keep current",
+				"secretKeyRequired": "Secret key is required",
+				"enabled": "Enabled",
+				"domains": "Mapped Domains",
+				"domainsHelp": "Add domains that should use this SES account. Use * for wildcard.",
+				"mappedDomains": "Mapped Domains",
+				"verifiedDomains": "Verified Domains",
+				"quota": "Quota",
+				"testConnection": "Test Connection",
+				"connectionSuccess": "Connection successful!",
+				"fillCredentialsFirst": "Please fill in region and access key first",
+				"deleteConfirm": "Delete SES Account",
+				"deleteConfirmContent": "Are you sure you want to delete the SES account: {name}?"
+			},
 			"notifySettings": {
 				"title": "Notification Settings",
 				"blacklist": {
@@ -1475,7 +1508,8 @@
 				"applyingCert": "Applying certificate, please wait...",
 				"adding": "Adding, please wait...",
 				"deleting": "Deleting, please wait...",
-				"clearing": "Clearing, please wait..."
+				"clearing": "Clearing, please wait...",
+				"testing": "Testing connection, please wait..."
 			}
 		},
 		"aiModel": {

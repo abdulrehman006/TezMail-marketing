@@ -133,3 +133,72 @@ export const setBlacklistAlertSettings = (params: {
 		},
 	})
 }
+
+// SES Settings API
+export interface SESAccount {
+	id: number
+	name: string
+	description: string
+	region: string
+	access_key: string
+	secret_key: string
+	enabled: boolean
+	status: string
+	status_message: string
+	last_verified: string
+	verified_domains: string[]
+	send_quota: {
+		max_24_hour_send: number
+		max_send_rate: number
+		sent_last_24_hours: number
+	} | null
+	check_interval_minutes: number
+	domains: string[]
+	created_at: string
+	updated_at: string
+}
+
+export const getSESConfig = () => {
+	return instance.get('/settings/get_ses_config')
+}
+
+export const saveSESAccount = (params: {
+	id?: number
+	name: string
+	description?: string
+	region: string
+	access_key: string
+	secret_key?: string
+	enabled: boolean
+	check_interval_minutes?: number
+	domains?: string[]
+}) => {
+	return instance.post('/settings/save_ses_account', params, {
+		fetchOptions: {
+			loading: t('settings.api.loading.setting'),
+			successMessage: true,
+		},
+	})
+}
+
+export const deleteSESAccount = (params: { id: number }) => {
+	return instance.post('/settings/delete_ses_account', params, {
+		fetchOptions: {
+			loading: t('settings.api.loading.deleting'),
+			successMessage: true,
+		},
+	})
+}
+
+export const testSESConnection = (params: {
+	region: string
+	access_key: string
+	secret_key: string
+}) => {
+	return instance.post('/settings/test_ses_connection', params, {
+		fetchOptions: {
+			loading: t('settings.api.loading.testing'),
+			successMessage: true,
+		},
+	})
+}

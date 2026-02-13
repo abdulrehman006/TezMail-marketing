@@ -224,7 +224,16 @@ func UpdateAccountStatus(accountName string, status string, message string, veri
 }
 
 // GetAccountForDomain returns the account configuration for a given sender domain
+// It first checks the database, then falls back to file config
 func GetAccountForDomain(senderEmail string) *AccountConfig {
+	// First, try to get from database
+	ctx := context.Background()
+	dbAccount, err := GetAccountForDomainFromDB(ctx, senderEmail)
+	if err == nil && dbAccount != nil {
+		return dbAccount
+	}
+
+	// Fall back to file config
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 

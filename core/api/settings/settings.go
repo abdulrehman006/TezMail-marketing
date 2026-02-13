@@ -27,4 +27,9 @@ type ISettingsV1 interface {
 	SetBlacklistAutoScan(ctx context.Context, req *v1.SetBlacklistAutoScanReq) (res *v1.SetBlacklistAutoScanRes, err error)
 	SetBlacklistAlert(ctx context.Context, req *v1.SetBlacklistAlertReq) (res *v1.SetBlacklistAlertRes, err error)
 	SetBlacklistAlertSettings(ctx context.Context, req *v1.SetBlacklistAlertSettingsReq) (res *v1.SetBlacklistAlertSettingsRes, err error)
+	// SES Settings
+	GetSESConfig(ctx context.Context, req *v1.GetSESConfigReq) (res *v1.GetSESConfigRes, err error)
+	SaveSESAccount(ctx context.Context, req *v1.SaveSESAccountReq) (res *v1.SaveSESAccountRes, err error)
+	DeleteSESAccount(ctx context.Context, req *v1.DeleteSESAccountReq) (res *v1.DeleteSESAccountRes, err error)
+	TestSESConnection(ctx context.Context, req *v1.TestSESConnectionReq) (res *v1.TestSESConnectionRes, err error)
 }
