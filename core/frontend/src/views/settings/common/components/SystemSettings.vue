@@ -20,7 +20,6 @@
 			<n-divider />
 			<ApiSettings />
 			<n-divider />
-			<SESSettings />
 			<n-divider />
 			<RetentionTime />
 		</div>
@@ -33,6 +32,5 @@ import TimezoneSettings from './TimezoneSettings.vue'
 import IpWhitelistSettings from './IpWhitelistSettings.vue'
 import ProxySettings from './ProxySettings.vue'
 import ApiSettings from './ApiSettings.vue'
-import SESSettings from './SESSettings.vue'
 import RetentionTime from './System/RetentionTime.vue'
 </script>

@@ -13,7 +13,6 @@ import (
 func (c *ControllerV1) SaveSESAccount(ctx context.Context, req *v1.SaveSESAccountReq) (res *v1.SaveSESAccountRes, err error) {
 	res = &v1.SaveSESAccountRes{}
 
-	// Validate required fields
 	if req.Name == "" {
 		res.SetError(gerror.New(public.LangCtx(ctx, "Account name is required")))
 		return res, nil
@@ -26,13 +25,11 @@ func (c *ControllerV1) SaveSESAccount(ctx context.Context, req *v1.SaveSESAccoun
 		res.SetError(gerror.New(public.LangCtx(ctx, "AWS access key is required")))
 		return res, nil
 	}
-	// Secret key required only for new accounts
 	if req.Id == 0 && req.SecretKey == "" {
 		res.SetError(gerror.New(public.LangCtx(ctx, "AWS secret key is required for new accounts")))
 		return res, nil
 	}
 
-	// Default check interval
 	if req.CheckIntervalMinutes <= 0 {
 		req.CheckIntervalMinutes = 30
 	}
@@ -59,7 +56,12 @@ func (c *ControllerV1) SaveSESAccount(ctx context.Context, req *v1.SaveSESAccoun
 		return res, nil
 	}
 
-	// Log the operation
+	if req.SecretKey != "" {
+		go func() {
+			ses_api.VerifyAccountByID(context.Background(), savedAccount.Id)
+		}()
+	}
+
 	_ = public.WriteLog(ctx, public.LogParams{
 		Type: consts.LOGTYPE.Settings,
 		Log:  "Updated SES account configuration",

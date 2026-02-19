@@ -101,11 +101,11 @@
 			</n-form>
 			<template #footer>
 				<div class="flex justify-end gap-8px">
-					<n-button @click="handleTestConnection" :loading="testing">
+					<n-button :loading="testing" @click="handleTestConnection">
 						{{ $t('settings.common.ses.testConnection') }}
 					</n-button>
 					<n-button @click="showModal = false">{{ $t('common.actions.cancel') }}</n-button>
-					<n-button type="primary" @click="handleSave" :loading="saving">
+					<n-button type="primary" :loading="saving" @click="handleSave">
 						{{ $t('common.actions.save') }}
 					</n-button>
 				</div>
@@ -117,10 +117,10 @@
 <script lang="tsx" setup>
 import { confirm } from '@/utils'
 import { getSESConfig, saveSESAccount, deleteSESAccount, testSESConnection, type SESAccount } from '@/api/modules/settings/common'
+import message from '@/config/message'
 import type { FormInst, FormRules } from 'naive-ui'
 
 const { t } = useI18n()
-const message = useMessage()
 
 const sesAccounts = ref<SESAccount[]>([])
 const showModal = ref(false)
@@ -250,7 +250,6 @@ const handleTestConnection = async () => {
 		message.warning(t('settings.common.ses.fillCredentialsFirst'))
 		return
 	}
-	// Secret key is always required for testing connection
 	if (!formData.secret_key) {
 		message.warning(t('settings.common.ses.secretKeyRequired'))
 		return

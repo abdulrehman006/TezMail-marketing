@@ -24,7 +24,6 @@ const route: RouteRecordRaw = {
 					path: 'service',
 					name: 'SettingsService',
 					meta: { title: 'Service', titleKey: 'layout.menu.service' },
-
 					component: () => import('@/views/settings/service/index.vue'),
 				},
 				{
@@ -50,6 +49,12 @@ const route: RouteRecordRaw = {
 					name: 'SendQueue',
 					meta: { title: 'Send Queue', titleKey: '' },
 					component: () => import('@/views/settings/send-queue/index.vue'),
+				},
+				{
+					path: 'ses-api',
+					name: 'SesApi',
+					meta: { title: 'SES API', titleKey: '' },
+					component: () => import('@/views/settings/ses-api/index.vue'),
 				},
 			],
 		},

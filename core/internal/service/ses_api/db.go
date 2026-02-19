@@ -4,6 +4,7 @@ import (
 	"billionmail-core/api/settings/v1"
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,11 +13,8 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// GetAllAccountsFromDB retrieves all SES accounts from the database
 func GetAllAccountsFromDB(ctx context.Context) ([]v1.SESAccount, error) {
 	var accounts []v1.SESAccount
-
-	// Query accounts
 	result, err := g.DB().Model("bm_ses_accounts").All()
 	if err != nil {
 		return nil, err
@@ -36,28 +34,21 @@ func GetAllAccountsFromDB(ctx context.Context) ([]v1.SESAccount, error) {
 			CheckIntervalMinutes: record["check_interval_minutes"].Int(),
 		}
 
-		// Parse last_verified
 		if !record["last_verified"].IsNil() && !record["last_verified"].IsEmpty() {
 			account.LastVerified = record["last_verified"].String()
 		}
-
-		// Parse verified_domains JSON
 		if !record["verified_domains"].IsNil() && !record["verified_domains"].IsEmpty() {
 			var domains []string
 			if err := json.Unmarshal(record["verified_domains"].Bytes(), &domains); err == nil {
 				account.VerifiedDomains = domains
 			}
 		}
-
-		// Parse send_quota JSON
 		if !record["send_quota"].IsNil() && !record["send_quota"].IsEmpty() {
 			var quota v1.SESQuota
 			if err := json.Unmarshal(record["send_quota"].Bytes(), &quota); err == nil {
 				account.SendQuota = &quota
 			}
 		}
-
-		// Parse timestamps
 		if !record["created_at"].IsNil() {
 			account.CreatedAt = record["created_at"].String()
 		}
@@ -65,21 +56,16 @@ func GetAllAccountsFromDB(ctx context.Context) ([]v1.SESAccount, error) {
 			account.UpdatedAt = record["updated_at"].String()
 		}
 
-		// Get mapped domains
 		domains, _ := getAccountDomains(ctx, account.Id)
 		account.Domains = domains
-
 		accounts = append(accounts, account)
 	}
 
 	return accounts, nil
 }
 
-// SaveAccountToDB saves or updates an SES account in the database
 func SaveAccountToDB(ctx context.Context, account *v1.SESAccount) (*v1.SESAccount, error) {
 	now := time.Now()
-
-	// Prepare data
 	data := g.Map{
 		"name":                   account.Name,
 		"description":           account.Description,
@@ -90,7 +76,6 @@ func SaveAccountToDB(ctx context.Context, account *v1.SESAccount) (*v1.SESAccoun
 		"updated_at":            now,
 	}
 
-	// Only update secret key if provided (not masked)
 	if account.SecretKey != "" && !isMaskedKey(account.SecretKey) {
 		data["secret_key"] = account.SecretKey
 	}
@@ -98,17 +83,14 @@ func SaveAccountToDB(ctx context.Context, account *v1.SESAccount) (*v1.SESAccoun
 	var savedId int64
 
 	if account.Id == 0 {
-		// New account
 		data["created_at"] = now
 		data["status"] = StatusPending
-
 		result, err := g.DB().Model("bm_ses_accounts").Data(data).Insert()
 		if err != nil {
 			return nil, err
 		}
 		savedId, _ = result.LastInsertId()
 	} else {
-		// Update existing account
 		_, err := g.DB().Model("bm_ses_accounts").Where("id", account.Id).Data(data).Update()
 		if err != nil {
 			return nil, err
@@ -116,16 +98,13 @@ func SaveAccountToDB(ctx context.Context, account *v1.SESAccount) (*v1.SESAccoun
 		savedId = account.Id
 	}
 
-	// Update domain mappings
 	if err := updateAccountDomains(ctx, savedId, account.Domains); err != nil {
 		g.Log().Error(ctx, "Failed to update domain mappings:", err)
 	}
 
-	// Return saved account
 	return GetAccountByIDFromDB(ctx, savedId)
 }
 
-// GetAccountByIDFromDB retrieves an SES account by ID
 func GetAccountByIDFromDB(ctx context.Context, id int64) (*v1.SESAccount, error) {
 	record, err := g.DB().Model("bm_ses_accounts").Where("id", id).One()
 	if err != nil {
@@ -151,21 +130,18 @@ func GetAccountByIDFromDB(ctx context.Context, id int64) (*v1.SESAccount, error)
 	if !record["last_verified"].IsNil() && !record["last_verified"].IsEmpty() {
 		account.LastVerified = record["last_verified"].String()
 	}
-
 	if !record["verified_domains"].IsNil() && !record["verified_domains"].IsEmpty() {
 		var domains []string
 		if err := json.Unmarshal(record["verified_domains"].Bytes(), &domains); err == nil {
 			account.VerifiedDomains = domains
 		}
 	}
-
 	if !record["send_quota"].IsNil() && !record["send_quota"].IsEmpty() {
 		var quota v1.SESQuota
 		if err := json.Unmarshal(record["send_quota"].Bytes(), &quota); err == nil {
 			account.SendQuota = &quota
 		}
 	}
-
 	if !record["created_at"].IsNil() {
 		account.CreatedAt = record["created_at"].String()
 	}
@@ -179,21 +155,17 @@ func GetAccountByIDFromDB(ctx context.Context, id int64) (*v1.SESAccount, error)
 	return account, nil
 }
 
-// DeleteAccountFromDB deletes an SES account from the database
 func DeleteAccountFromDB(ctx context.Context, id int64) error {
-	// Domain mappings will be deleted automatically via CASCADE
 	_, err := g.DB().Model("bm_ses_accounts").Where("id", id).Delete()
 	return err
 }
 
-// GetAccountForDomainFromDB retrieves the SES account configured for a specific domain
 func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*AccountConfig, error) {
 	domain := extractDomain(senderEmail)
 	if domain == "" {
 		return nil, nil
 	}
 
-	// Look up domain mapping
 	mapping, err := g.DB().Model("bm_ses_domain_mapping").Where("domain", domain).One()
 	if err != nil {
 		return nil, err
@@ -201,7 +173,6 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 
 	var accountId int64
 	if mapping.IsEmpty() {
-		// Try wildcard mapping
 		mapping, err = g.DB().Model("bm_ses_domain_mapping").Where("domain", "*").One()
 		if err != nil {
 			return nil, err
@@ -212,7 +183,6 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	}
 	accountId = mapping["account_id"].Int64()
 
-	// Get the account
 	record, err := g.DB().Model("bm_ses_accounts").Where("id", accountId).Where("enabled", 1).One()
 	if err != nil {
 		return nil, err
@@ -221,7 +191,6 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 		return nil, nil
 	}
 
-	// Only return if status is connected or pending
 	status := record["status"].String()
 	if status != StatusConnected && status != StatusPending {
 		return nil, nil
@@ -236,15 +205,12 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 		Status:      status,
 	}
 
-	// Parse verified domains
 	if !record["verified_domains"].IsNil() && !record["verified_domains"].IsEmpty() {
 		var domains []string
 		if err := json.Unmarshal(record["verified_domains"].Bytes(), &domains); err == nil {
 			account.VerifiedDomains = domains
 		}
 	}
-
-	// Parse send quota
 	if !record["send_quota"].IsNil() && !record["send_quota"].IsEmpty() {
 		var quota SendQuota
 		if err := json.Unmarshal(record["send_quota"].Bytes(), &quota); err == nil {
@@ -255,7 +221,6 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	return account, nil
 }
 
-// UpdateAccountStatusInDB updates the status of an account in the database
 func UpdateAccountStatusInDB(ctx context.Context, id int64, status string, message string, verifiedDomains []string, quota *SendQuota) error {
 	data := g.Map{
 		"status":         status,
@@ -278,8 +243,6 @@ func UpdateAccountStatusInDB(ctx context.Context, id int64, status string, messa
 	return err
 }
 
-// Helper functions
-
 func getAccountDomains(ctx context.Context, accountId int64) ([]string, error) {
 	var domains []string
 	result, err := g.DB().Model("bm_ses_domain_mapping").Where("account_id", accountId).All()
@@ -293,13 +256,11 @@ func getAccountDomains(ctx context.Context, accountId int64) ([]string, error) {
 }
 
 func updateAccountDomains(ctx context.Context, accountId int64, domains []string) error {
-	// Delete existing mappings
 	_, err := g.DB().Model("bm_ses_domain_mapping").Where("account_id", accountId).Delete()
 	if err != nil {
 		return err
 	}
 
-	// Insert new mappings
 	for _, domain := range domains {
 		if domain == "" {
 			continue
@@ -341,7 +302,6 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// TestSESCredentials tests the SES connection with provided credentials and returns full details
 func TestSESCredentials(ctx context.Context, region, accessKey, secretKey string) (string, []string, *SendQuota, error) {
 	cfg := aws.Config{
 		Region: region,
@@ -354,13 +314,11 @@ func TestSESCredentials(ctx context.Context, region, accessKey, secretKey string
 
 	client := sesv2.NewFromConfig(cfg)
 
-	// Get account details
 	accountDetails, err := client.GetAccount(ctx, &sesv2.GetAccountInput{})
 	if err != nil {
 		return StatusFailed, nil, nil, err
 	}
 
-	// Get send quota
 	var quota *SendQuota
 	if accountDetails.SendQuota != nil {
 		quota = &SendQuota{
@@ -370,18 +328,49 @@ func TestSESCredentials(ctx context.Context, region, accessKey, secretKey string
 		}
 	}
 
-	// Get verified domains
 	verifiedDomains, err := getVerifiedDomains(ctx, client)
 	if err != nil {
 		g.Log().Warning(ctx, "Failed to get verified domains:", err)
 		verifiedDomains = []string{}
 	}
 
-	// Determine status based on sending enabled
 	status := StatusConnected
 	if !accountDetails.SendingEnabled {
 		status = StatusFailed
 	}
 
 	return status, verifiedDomains, quota, nil
+}
+
+func VerifyAccountByID(ctx context.Context, id int64) error {
+	record, err := g.DB().Model("bm_ses_accounts").Where("id", id).One()
+	if err != nil {
+		return err
+	}
+	if record.IsEmpty() {
+		return nil
+	}
+
+	region := record["region"].String()
+	accessKey := record["access_key"].String()
+	secretKey := record["secret_key"].String()
+
+	if region == "" || accessKey == "" || secretKey == "" {
+		return nil
+	}
+
+	_ = UpdateAccountStatusInDB(ctx, id, StatusChecking, "Verification in progress...", nil, nil)
+
+	status, verifiedDomains, quota, err := TestSESCredentials(ctx, region, accessKey, secretKey)
+	if err != nil {
+		_ = UpdateAccountStatusInDB(ctx, id, StatusFailed, err.Error(), nil, nil)
+		return err
+	}
+
+	statusMsg := "Connected successfully"
+	if len(verifiedDomains) > 0 {
+		statusMsg = fmt.Sprintf("Verified OK - %d domains available", len(verifiedDomains))
+	}
+
+	return UpdateAccountStatusInDB(ctx, id, status, statusMsg, verifiedDomains, quota)
 }
