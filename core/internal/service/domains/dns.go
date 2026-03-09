@@ -74,8 +74,34 @@ func ValidateTXTRecord(record v1.DNSRecord, domain string) bool {
 			}
 		}
 	case strings.HasPrefix(vl, "v=dkim"):
-		// Match DKIM Record
-		break
+		// Match DKIM Record — extract the p= value and compare
+		// DNS may split long TXT records into multiple strings that get concatenated
+		expectedKey := ""
+		if idx := strings.Index(vl, "p="); idx >= 0 {
+			expectedKey = strings.TrimSpace(vl[idx+2:])
+			expectedKey = strings.TrimRight(expectedKey, ";")
+			expectedKey = strings.ReplaceAll(expectedKey, " ", "")
+		}
+		if expectedKey == "" {
+			return false
+		}
+		for _, txt := range txtRecords {
+			// Concatenate and normalize the DNS TXT record
+			combined := strings.ReplaceAll(txt, " ", "")
+			combined = strings.ReplaceAll(combined, "\t", "")
+			combinedLower := strings.ToLower(combined)
+			if strings.Contains(combinedLower, "v=dkim1") {
+				dnsKey := ""
+				if idx := strings.Index(combinedLower, "p="); idx >= 0 {
+					dnsKey = strings.TrimSpace(combinedLower[idx+2:])
+					dnsKey = strings.TrimRight(dnsKey, ";")
+					dnsKey = strings.ReplaceAll(dnsKey, " ", "")
+				}
+				if dnsKey != "" && dnsKey == expectedKey {
+					return true
+				}
+			}
+		}
 	case strings.HasPrefix(vl, "v=spf"):
 		// Match SPF Record
 		addrs := make([]string, 0)
