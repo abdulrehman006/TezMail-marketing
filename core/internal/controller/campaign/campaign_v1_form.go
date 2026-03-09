@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/domains"
 	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/ses_api"
 	"context"
 	"fmt"
 	"net/url"
@@ -115,13 +116,6 @@ func sendConfirmationEmail(ctx context.Context, email, name string) error {
 	// Construct noreply email address
 	noreplyEmail := fmt.Sprintf("noreply@%s", domain)
 
-	// Create email sender
-	sender, err := mail_service.NewEmailSenderWithLocal(noreplyEmail)
-	if err != nil {
-		return fmt.Errorf("failed to create email sender: %w", err)
-	}
-	defer sender.Close()
-
 	// Create confirmation email content
 	subject := "Welcome! Your subscription has been confirmed"
 	content := fmt.Sprintf(`
@@ -157,12 +151,24 @@ func sendConfirmationEmail(ctx context.Context, email, name string) error {
 </body>
 </html>`, name, email)
 
-	// Create email message
+	// Try SES API first, fall back to SMTP
+	sentViaSES, _ := ses_api.TrySendEmail(ctx, noreplyEmail, []string{email}, subject, content, "", "Newsletter Team", "", nil)
+	if sentViaSES {
+		g.Log().Info(ctx, "Confirmation email sent via SES API to %s", email)
+		return nil
+	}
+
+	// Fall back to SMTP
+	sender, err := mail_service.NewEmailSenderWithLocal(noreplyEmail)
+	if err != nil {
+		return fmt.Errorf("failed to create email sender: %w", err)
+	}
+	defer sender.Close()
+
 	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(sender.GenerateMessageID())
 	message.SetRealName("Newsletter Team")
 
-	// Send the email
 	err = sender.Send(message, []string{email})
 	if err != nil {
 		return fmt.Errorf("failed to send confirmation email: %w", err)

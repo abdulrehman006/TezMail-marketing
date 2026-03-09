@@ -49,7 +49,7 @@ type CreateTaskArgs struct {
 // ============= task related operations =============
 
 // GetTasksWithPage get task list (pagination)
-func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, status int) (total int, list []*v1.EmailTask, err error) {
+func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, status int, domain string) (total int, list []*v1.EmailTask, err error) {
 	// default pagination parameters
 	if page <= 0 {
 		page = 1
@@ -67,6 +67,9 @@ func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, s
 	}
 	if status != -1 {
 		model = model.Where("task_process", status)
+	}
+	if domain != "" {
+		model = model.WhereLike("addresser", "%@"+domain)
 	}
 
 	// get total

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/gogf/gf/v2/frame/g"
 )
@@ -70,7 +71,7 @@ type ChatInfo struct {
 	UpdateTime   int64     `json:"update_time"`  // Last update time of the chat
 }
 
-var ChatStatus = map[string]bool{}
+var ChatStatus sync.Map
 
 func SaveTempChat(chatId string, chatInfo *TempChat) error {
 	// Implementation for saving a temporary chat
@@ -269,12 +270,15 @@ func Chat(ctx context.Context, chatId string, supplierName string, modelId strin
 		return errors.New("Failed to save chat")
 	}
 
-	ChatStatus[chatId] = true // Set chat status to active
+	ChatStatus.Store(chatId, true) // Set chat status to active
 	defer func() {
-		delete(ChatStatus, chatId) // Ensure chat status is removed after processing
+		ChatStatus.Delete(chatId) // Ensure chat status is removed after processing
 	}()
 
 	aiObj := NewOpenAI(ctx, supplierInfo.ApiKey, supplierInfo.BaseUrl, modelId, chatId, supplierName, modelInfo.MaxTokens)
+	if aiObj == nil {
+		return errors.New("Failed to initialize AI chat, please check chat configuration")
+	}
 	aiObj.GetClient()
 	return aiObj.Chat(content, isText)
 }
@@ -296,10 +300,10 @@ func RemoveChat(chatId string) error {
 func Stop(chatId string) error {
 	// Implementation for stopping a chat
 	// This function should handle the logic for stopping a chat based on the provided parameters
-	if _, exists := ChatStatus[chatId]; !exists {
+	if _, exists := ChatStatus.Load(chatId); !exists {
 		return errors.New("Chat not found or already stopped")
 	}
-	ChatStatus[chatId] = false // Set chat status to inactive
+	ChatStatus.Store(chatId, false) // Set chat status to inactive
 	return nil
 }
 

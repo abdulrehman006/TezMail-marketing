@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
@@ -89,7 +91,7 @@ type WebSearchParams struct {
 func NewOpenAI(ctx context.Context, apiKey, baseUrl, modelId, chatId, supplierName string, maxTokens int) *OpenAI {
 	tempInfo, err := GetTempChat(chatId)
 	if err != nil {
-		fmt.Println("Error getting template chat:", err)
+		g.Log().Error(ctx, "Error getting chat config for chatId:", chatId, err)
 		return nil // Return nil if there is an error getting template chat info
 	}
 	return &OpenAI{
@@ -130,7 +132,10 @@ type ModelConfig struct {
 	Description string
 }
 
-var SYSTEM_PROMPT_TOKENS = 0
+var (
+	systemPromptTokens     int64
+	systemPromptTokensOnce sync.Once
+)
 
 // GetClient returns the OpenAI client
 func (o *OpenAI) GetClient() *openai.Client {
@@ -142,7 +147,7 @@ func (o *OpenAI) GetClient() *openai.Client {
 	} else {
 		config := openai.DefaultConfig(o.ApiKey)
 		if o.BaseUrl != "" {
-			config.BaseURL = o.BaseUrl
+			config.BaseURL = strings.TrimRight(o.BaseUrl, "/")
 		}
 		o.Client = openai.NewClientWithConfig(config)
 	}
@@ -288,10 +293,11 @@ func (o *OpenAI) CalculateTokens(content string, isCache bool) (int, error) {
 // It also adds the system prompt tokens to the total prompt tokens
 func (o *OpenAI) CalculatePromptTokens(content string) {
 	o.Usage.PromptTokens, _ = o.CalculateTokens(content, false) // Update prompt tokens based on the content length
-	if SYSTEM_PROMPT_TOKENS == 0 {
-		SYSTEM_PROMPT_TOKENS, _ = o.CalculateTokens(INITIAL_SYSTEM_PROMPT, true)
-	}
-	o.Usage.PromptTokens += SYSTEM_PROMPT_TOKENS + o.AddedSystemPromptTokens // Add system prompt tokens to the total prompt tokens
+	systemPromptTokensOnce.Do(func() {
+		tokens, _ := o.CalculateTokens(INITIAL_SYSTEM_PROMPT, true)
+		atomic.StoreInt64(&systemPromptTokens, int64(tokens))
+	})
+	o.Usage.PromptTokens += int(atomic.LoadInt64(&systemPromptTokens)) + o.AddedSystemPromptTokens // Add system prompt tokens to the total prompt tokens
 }
 
 func (o *OpenAI) WriteMessage(content string, finishReason string) {
@@ -599,22 +605,15 @@ func (o *OpenAI) GetMessages() []openai.ChatCompletionMessage {
 	return messages
 }
 
-// CreateChatCompletionStream creates a chat completion stream for the OpenAI API
-// It handles the streaming of responses, tool calls, and writing events to the response.
-// It also manages the chat status and ensures proper handling of tool calls.
-func (o *OpenAI) CreateChatCompletionStream(request *ghttp.Request, req openai.ChatCompletionRequest, isText bool) error {
-	stream, err := o.Client.CreateChatCompletionStream(o.Ctx, req)
-	if err != nil {
-		fmt.Println("Error creating chat completion stream:", err)
-		return err
-	}
-
+// ProcessChatStream processes an already-created chat completion stream.
+// Called from Chat() with a pre-validated stream, or recursively for tool calls.
+func (o *OpenAI) ProcessChatStream(request *ghttp.Request, req openai.ChatCompletionRequest, stream *openai.ChatCompletionStream, isText bool) error {
 	defer stream.Close()
 	toolCallMap := make(map[string]*openai.ToolCall)
 	toolId := ""
 	finishReason := ""
 	for {
-		if ChatStatus[o.ChatId] == false {
+		if v, ok := ChatStatus.Load(o.ChatId); !ok || v.(bool) == false {
 			finishReason = "stop"
 			break
 		}
@@ -624,8 +623,9 @@ func (o *OpenAI) CreateChatCompletionStream(request *ghttp.Request, req openai.C
 			break
 		}
 		if err != nil {
-			fmt.Println("Error receiving stream:", err)
-			// return err
+			g.Log().Error(o.Ctx, "Error receiving stream:", err)
+			// Write error to SSE so frontend can display it
+			o.WriteEvent(request, "\n\nStream error: "+err.Error(), isText, false)
 			break
 		}
 		// Check if the response contains tool calls
@@ -719,8 +719,15 @@ func (o *OpenAI) CreateChatCompletionStream(request *ghttp.Request, req openai.C
 
 			}
 		}
-		// Recursively call the function to handle tool calls
-		return o.CreateChatCompletionStream(request, req, isText)
+		// Recursively create a new stream for tool call follow-up
+		newStream, err := o.Client.CreateChatCompletionStream(o.Ctx, req)
+		if err != nil {
+			g.Log().Error(o.Ctx, "Failed to create follow-up stream for tool calls:", err)
+			o.WriteEvent(request, "\n\nError: "+err.Error(), isText, false)
+			o.WriteEvent(request, "", isText, true)
+			return nil
+		}
+		return o.ProcessChatStream(request, req, newStream, isText)
 	}
 
 	// Ensure the response is properly closed
@@ -753,19 +760,36 @@ func (o *OpenAI) Chat(content string, isText bool) error {
 		Model:               o.ModelId,
 		MaxCompletionTokens: o.MaxTokens,
 		Messages:            o.GetMessages(), // Get the messages for the chat
-		Temperature:         0.6,             // Set temperature for the chat completion
 		Stream:              true,
 		Tools:               tools, // Add the registered tools to the request
 	}
+
+	// o1/o3/o4 reasoning models don't support Temperature parameter
+	modelLower := strings.ToLower(o.ModelId)
+	isReasoningModel := strings.HasPrefix(modelLower, "o1") || strings.HasPrefix(modelLower, "o3") || strings.HasPrefix(modelLower, "o4")
+	if !isReasoningModel {
+		req.Temperature = 0.6
+	}
 	o.MessageId = GetUUID()
 
-	o.RequestTime = public.GetNowTime()                                               // Set request time to the current time
-	o.CalculatePromptTokens(content)                                                  // Calculate prompt tokens based on the content
-	request.Response.Header().Set("Content-Type", "text/event-stream; charset=utf-8") // Set content type for SSE (Server-Sent Events)
+	o.RequestTime = public.GetNowTime()  // Set request time to the current time
+	o.CalculatePromptTokens(content)     // Calculate prompt tokens based on the content
+
+	// Create the stream BEFORE setting SSE headers — if the API call fails,
+	// we can still return a proper error (not an empty SSE response)
+	stream, err := o.Client.CreateChatCompletionStream(o.Ctx, req)
+	if err != nil {
+		g.Log().Error(o.Ctx, "Failed to create chat completion stream:", err)
+		return fmt.Errorf("AI API error: %s", err.Error())
+	}
+
+	// Stream created successfully — now commit SSE headers
+	request.Response.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	request.Response.Header().Set("Cache-Control", "no-cache")
 	request.Response.Header().Set("Connection", "keep-alive")
-	request.Response.WriteHeader(200)                         // OK status
-	return o.CreateChatCompletionStream(request, req, isText) // Create chat completion stream with the request
+	request.Response.WriteHeader(200)
+
+	return o.ProcessChatStream(request, req, stream, isText)
 }
 
 type ReplaceHtml struct {

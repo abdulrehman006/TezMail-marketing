@@ -262,6 +262,48 @@ func encodeBase64(data []byte) []byte {
 	return result
 }
 
+// TrySendEmail attempts to send email via SES API first (if configured for the sender domain),
+// falling back to SMTP. Returns (sent via SES, error). If sent via SES is true, the caller
+// should skip SMTP. If false, the caller should proceed with SMTP as usual.
+// This is the single shared method all email sending paths should use.
+func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, subject, htmlBody, textBody, displayName, messageID string, extraHeaders map[string]string) (sentViaSES bool, err error) {
+	account := GetAccountForDomain(senderEmail)
+	if account == nil {
+		return false, nil // No SES configured, caller should use SMTP
+	}
+
+	sesSender, _, sesErr := GetSenderForEmail(ctx, senderEmail)
+	if sesErr != nil {
+		g.Log().Warning(ctx, "Failed to create SES sender for", senderEmail, ", falling back to SMTP:", sesErr)
+		return false, nil
+	}
+
+	// Build From address with display name
+	fromAddress := senderEmail
+	if displayName != "" {
+		fromAddress = fmt.Sprintf("%s <%s>", displayName, senderEmail)
+	}
+
+	input := &SendEmailInput{
+		From:      fromAddress,
+		To:        recipients,
+		Subject:   subject,
+		HtmlBody:  htmlBody,
+		TextBody:  textBody,
+		Headers:   extraHeaders,
+		MessageID: messageID,
+	}
+
+	result := sesSender.SendEmail(ctx, input)
+	if result.Success {
+		g.Log().Debug(ctx, "Email sent via SES API to", recipients)
+		return true, nil
+	}
+
+	g.Log().Warning(ctx, "SES API send failed, falling back to SMTP:", result.Error)
+	return false, nil
+}
+
 // GetSenderForEmail returns a SES sender for the given email address
 func GetSenderForEmail(ctx context.Context, senderEmail string) (*SESSender, string, error) {
 	account := GetAccountForDomain(senderEmail)
@@ -269,19 +311,20 @@ func GetSenderForEmail(ctx context.Context, senderEmail string) (*SESSender, str
 		return nil, "", fmt.Errorf("no SES account configured for domain")
 	}
 
-	// Find account name
-	config := GetConfig()
-	if config == nil {
-		return nil, "", fmt.Errorf("SES config not loaded")
-	}
+	// Use account name from DB lookup (already populated by GetAccountForDomainFromDB)
+	accountName := account.Name
 
-	accountName := ""
-	domain := extractDomain(senderEmail)
-
-	if name, ok := config.DomainMapping[domain]; ok {
-		accountName = name
-	} else if name, ok := config.DomainMapping["*"]; ok {
-		accountName = name
+	// Fall back to file config only if DB didn't provide a name
+	if accountName == "" {
+		config := GetConfig()
+		if config != nil {
+			domain := extractDomain(senderEmail)
+			if name, ok := config.DomainMapping[domain]; ok {
+				accountName = name
+			} else if name, ok := config.DomainMapping["*"]; ok {
+				accountName = name
+			}
+		}
 	}
 
 	sender, err := NewSESSender(account, accountName)

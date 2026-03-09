@@ -200,7 +200,14 @@ func GetModelList(supplierName string) []ModelInfo {
 		return Models
 	}
 
+	filteredModels := make([]ModelInfo, 0, len(Models))
 	for i := 0; i < len(Models); i++ {
+		// Filter out non-chat models that can't be used for streaming chat completion
+		modelLower := strings.ToLower(Models[i].ModelId)
+		if isNonChatModel(modelLower) {
+			continue
+		}
+
 		if Models[i].Title == "" {
 			Models[i].Title = fmt.Sprintf("%s/%s", supplierName, Models[i].ModelId)
 		}
@@ -211,9 +218,56 @@ func GetModelList(supplierName string) []ModelInfo {
 		if !isActive {
 			Models[i].Status = false
 		}
+		filteredModels = append(filteredModels, Models[i])
 	}
 
-	return Models
+	return filteredModels
+}
+
+// isNonChatModel checks if a model ID (lowercased) is NOT a chat-compatible model.
+// These models don't support the chat completion streaming API.
+func isNonChatModel(modelLower string) bool {
+	// TTS models
+	if strings.Contains(modelLower, "tts") {
+		return true
+	}
+	// Whisper/transcription models
+	if strings.Contains(modelLower, "whisper") || strings.Contains(modelLower, "transcribe") {
+		return true
+	}
+	// Image generation models
+	if strings.Contains(modelLower, "dall-e") || strings.HasPrefix(modelLower, "gpt-image") || modelLower == "chatgpt-image-latest" {
+		return true
+	}
+	// Embedding models
+	if strings.Contains(modelLower, "embedding") {
+		return true
+	}
+	// Legacy completion models (not chat)
+	if strings.Contains(modelLower, "davinci") || strings.Contains(modelLower, "babbage") || strings.Contains(modelLower, "instruct") {
+		return true
+	}
+	// Moderation models
+	if strings.Contains(modelLower, "moderation") {
+		return true
+	}
+	// Realtime/audio-only models
+	if strings.Contains(modelLower, "realtime") || strings.Contains(modelLower, "audio") {
+		return true
+	}
+	// Video models
+	if strings.HasPrefix(modelLower, "sora") {
+		return true
+	}
+	// Deep research models (not streaming chat)
+	if strings.Contains(modelLower, "deep-research") {
+		return true
+	}
+	// Codex models (code-only, not chat)
+	if strings.Contains(modelLower, "codex") {
+		return true
+	}
+	return false
 }
 
 // GetModelInfo retrieves a specific model's information by its ID from the supplier's model list.

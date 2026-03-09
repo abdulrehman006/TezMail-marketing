@@ -7,6 +7,7 @@ import (
 	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/maillog_stat"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/ses_api"
 	"context"
 	"fmt"
 	"strings"
@@ -343,6 +344,13 @@ func sendApiMailWithSender(ctx context.Context, apiTemplate *entity.ApiTemplates
 	}
 	content = mailTracker.GetHTML()
 
+	// Try SES API first
+	sentViaSES, _ := ses_api.TrySendEmail(ctx, log.Addresser, []string{log.Recipient}, subject, content, "", apiTemplate.FullName, messageId, nil)
+	if sentViaSES {
+		return nil
+	}
+
+	// Fall back to SMTP
 	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(messageId)
 	if apiTemplate.FullName != "" {
@@ -418,14 +426,6 @@ func preloadData(ctx context.Context, logs []ApiMailLog) (*CacheData, error) {
 // send email
 func sendApiMail(ctx context.Context, apiTemplate *entity.ApiTemplates, subject string, content string, log ApiMailLog) error {
 
-	// create email sender
-	sender, err := mail_service.NewEmailSenderWithLocal(log.Addresser)
-	if err != nil {
-		updateLogStatus(ctx, log.Id, 3, err.Error())
-		return err
-	}
-	defer sender.Close()
-
 	// generate message ID
 	messageId := "<" + log.MessageId + ">"
 
@@ -437,6 +437,21 @@ func sendApiMail(ctx context.Context, apiTemplate *entity.ApiTemplates, subject 
 	mailTracker.TrackLinks()
 	mailTracker.AppendTrackingPixel()
 	content = mailTracker.GetHTML()
+
+	// Try SES API first
+	sentViaSES, _ := ses_api.TrySendEmail(ctx, log.Addresser, []string{log.Recipient}, subject, content, "", apiTemplate.FullName, messageId, nil)
+	if sentViaSES {
+		updateLogStatus(ctx, log.Id, 2, "")
+		return nil
+	}
+
+	// Fall back to SMTP
+	sender, err := mail_service.NewEmailSenderWithLocal(log.Addresser)
+	if err != nil {
+		updateLogStatus(ctx, log.Id, 3, err.Error())
+		return err
+	}
+	defer sender.Close()
 
 	// create email message
 	message := mail_service.NewMessage(subject, content)

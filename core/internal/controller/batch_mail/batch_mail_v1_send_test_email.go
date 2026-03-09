@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/batch_mail"
 	"billionmail-core/internal/service/domains"
 	"billionmail-core/internal/service/mail_service"
+	"billionmail-core/internal/service/ses_api"
 	"database/sql"
 	"strings"
 
@@ -21,13 +22,6 @@ import (
 func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailReq) (res *v1.SendTestEmailRes, err error) {
 
 	res = &v1.SendTestEmailRes{}
-	sender, err := mail_service.NewEmailSenderWithLocal(req.Addresser)
-	if err != nil {
-		res.Code = 400
-		res.SetError(gerror.New(public.LangCtx(ctx, "create email sender failed: : {}", err.Error())))
-		return
-	}
-	defer sender.Close()
 
 	var template entity.EmailTemplate
 
@@ -77,6 +71,33 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 		}
 	}
 
+	// Build unsubscribe headers
+	headers := make(map[string]string)
+	if unsubscribeJumpURL != "" {
+		headers["List-Unsubscribe"] = fmt.Sprintf("<%s>", unsubscribeJumpURL)
+		headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+	}
+
+	// Try SES API first, fall back to SMTP
+	sentViaSES, _ := ses_api.TrySendEmail(ctx, req.Addresser, []string{req.Recipient}, subject, content, "", "", "", headers)
+	if sentViaSES {
+		_ = public.WriteLog(ctx, public.LogParams{
+			Type: consts.LOGTYPE.Task,
+			Log:  "Send test email (SES API) :" + subject + " to " + req.Recipient + " successfully",
+		})
+		res.SetSuccess(public.LangCtx(ctx, "send email successfully"))
+		return
+	}
+
+	// Fall back to SMTP
+	sender, err := mail_service.NewEmailSenderWithLocal(req.Addresser)
+	if err != nil {
+		res.Code = 400
+		res.SetError(gerror.New(public.LangCtx(ctx, "create email sender failed: : {}", err.Error())))
+		return
+	}
+	defer sender.Close()
+
 	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(sender.GenerateMessageID())
 
@@ -89,7 +110,7 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 
 	_ = public.WriteLog(ctx, public.LogParams{
 		Type: consts.LOGTYPE.Task,
-		Log:  "Send test email :" + subject + "to" + req.Recipient + " successfully",
+		Log:  "Send test email :" + subject + " to " + req.Recipient + " successfully",
 	})
 
 	res.SetSuccess(public.LangCtx(ctx, "send email successfully"))

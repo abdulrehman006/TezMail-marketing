@@ -208,7 +208,7 @@ export async function sendChat(store: TemplateStore, e?: KeyboardEvent) {
 				supplier_name: currentModel.value.supplierName,
 				model_id: currentModel.value.modelId,
 				content: chatContent,
-				is_text: 'false',
+				is_text: false,
 			},
 			{
 				fetchOptions: {

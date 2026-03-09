@@ -81,6 +81,7 @@ type ListTasksReq struct {
 	PageSize      int    `json:"page_size" v:"required|min:1" dc:"page size"`
 	Keyword       string `json:"keyword" dc:"search keyword"`
 	Status        int    `json:"status" dc:"task status" default:"-1"`
+	Domain        string `json:"domain" dc:"filter by sender domain"`
 }
 
 type ListTasksRes struct {

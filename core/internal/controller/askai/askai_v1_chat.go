@@ -4,6 +4,8 @@ import (
 	v1 "billionmail-core/api/askai/v1"
 	"billionmail-core/internal/service/askai"
 	"context"
+
+	"github.com/gogf/gf/v2/frame/g"
 )
 
 // Chat related methods
@@ -49,9 +51,18 @@ func (c *ControllerV1) Info(ctx context.Context, req *v1.InfoReq) (res *v1.InfoR
 
 func (c *ControllerV1) Chat(ctx context.Context, req *v1.ChatReq) (res *v1.ChatRes, err error) {
 	res = &v1.ChatRes{}
-	err = askai.Chat(ctx, req.ChatId, req.SupplierName, req.ModelId, req.Content, req.IsText)
-	if err != nil {
-		res.SetError(err)
+	chatErr := askai.Chat(ctx, req.ChatId, req.SupplierName, req.ModelId, req.Content, req.IsText)
+	if chatErr != nil {
+		// If SSE headers were already sent, write error as SSE event
+		r := g.RequestFromCtx(ctx)
+		if r != nil && r.Response.BufferLength() > 0 {
+			// SSE stream was already started, write error as SSE event
+			errJson := `{"content":"Error: ` + chatErr.Error() + `","is_end":true,"role":"assistant"}`
+			r.Response.Write("id: error\ndata: " + errJson + "\n\n")
+			r.Response.Flush()
+			return res, nil
+		}
+		res.SetError(chatErr)
 		return res, nil
 	}
 	return

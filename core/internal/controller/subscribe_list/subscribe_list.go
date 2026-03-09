@@ -12,6 +12,7 @@ import (
 	"billionmail-core/internal/service/mail_boxes"
 	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/ses_api"
 	"context"
 	"database/sql"
 	"fmt"
@@ -201,7 +202,13 @@ func SendMail(ctx context.Context, emailHtml, email, subject, confirmUrl string)
 		return gerror.New(public.LangCtx(ctx, "Failed to find noreply email: {}", err))
 	}
 
-	// 6. Create sender
+	// 6. Try SES API first, fall back to SMTP
+	sentViaSES, _ := ses_api.TrySendEmail(ctx, address, []string{email}, personalizedSubject, personalizedContent, "", "noreply", "", nil)
+	if sentViaSES {
+		return nil
+	}
+
+	// 7. Fall back to SMTP
 	sender, err := mail_service.NewEmailSenderWithLocal(address)
 	if err != nil {
 		return gerror.New(public.LangCtx(ctx, "Failed to create a sender"))
@@ -209,12 +216,10 @@ func SendMail(ctx context.Context, emailHtml, email, subject, confirmUrl string)
 	defer sender.Close()
 	messageId := sender.GenerateMessageID()
 
-	// 7. Create message
 	message := mail_service.NewMessage(personalizedSubject, personalizedContent)
 	message.SetMessageID(messageId)
 	message.SetRealName("noreply")
 
-	// 8. Send email
 	err = sender.Send(message, []string{email})
 	if err != nil {
 		return gerror.New(public.LangCtx(ctx, "Failed to send email: {}", err))

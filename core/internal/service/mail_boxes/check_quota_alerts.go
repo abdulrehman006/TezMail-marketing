@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"billionmail-core/internal/service/mail_service"
+	"billionmail-core/internal/service/ses_api"
 	"github.com/gogf/gf/v2/frame/g"
 )
 
@@ -208,6 +209,13 @@ func sendQuotaAlertEmail(ctx context.Context, a quotaAlertTarget) error {
 	bodyBuilder.WriteString("Suggested actions:\n - Delete large or old mails\n - Empty Trash/Spam folders\n - Request quota increase if necessary\n\nThis is an automated notification.\n")
 	content := bodyBuilder.String()
 
+	// Try SES API first, fall back to SMTP
+	sentViaSES, _ := ses_api.TrySendEmail(ctx, fromAddress, []string{toAddress}, subject, "", content, "Quota Monitor", "", nil)
+	if sentViaSES {
+		return nil
+	}
+
+	// Fall back to SMTP
 	sender, err := mail_service.NewEmailSenderWithLocal(fromAddress)
 	if err != nil {
 		return err
