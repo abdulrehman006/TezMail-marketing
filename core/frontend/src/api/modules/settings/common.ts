@@ -158,6 +158,15 @@ export interface SESAccount {
 	updated_at: string
 }
 
+export const setLocalSMTP = (params: { enabled: boolean }) => {
+	return instance.post('/settings/set_local_smtp', params, {
+		fetchOptions: {
+			loading: t('settings.api.loading.setting'),
+			successMessage: true,
+		},
+	})
+}
+
 export const getSESConfig = () => {
 	return instance.get('/settings/get_ses_config')
 }

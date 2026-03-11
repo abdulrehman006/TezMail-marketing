@@ -95,6 +95,9 @@ type SystemConfig struct {
 		APIToken      string `json:"api_token" dc:"API access token"`
 	} `json:"api_doc_swagger" dc:"API doc and Swagger UI configuration"`
 
+	// Local SMTP enabled
+	LocalSMTPEnabled bool `json:"local_smtp_enabled" dc:"local SMTP sending enabled"`
+
 	// blacklist config
 	BlacklistConfig BlacklistConfig `json:"blacklist_config" dc:"blacklist configuration"`
 	// Data retention days
@@ -292,6 +295,18 @@ type SetBlacklistAlertSettingsReq struct {
 }
 
 type SetBlacklistAlertSettingsRes struct {
+	api_v1.StandardRes
+}
+
+// ============== Local SMTP Settings ==============
+
+type SetLocalSMTPReq struct {
+	g.Meta        `path:"/settings/set_local_smtp" tags:"Settings" method:"post" summary:"Enable or disable local SMTP sending"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	Enabled       bool   `json:"enabled" dc:"Enable local SMTP sending"`
+}
+
+type SetLocalSMTPRes struct {
 	api_v1.StandardRes
 }
 

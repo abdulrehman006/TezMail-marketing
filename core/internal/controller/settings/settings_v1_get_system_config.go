@@ -67,6 +67,14 @@ func (c *ControllerV1) GetSystemConfig(ctx context.Context, req *v1.GetSystemCon
 	config.APIDocSwagger.APIDocURL = BaseURL + "/api.json"
 	config.APIDocSwagger.SwaggerURL = BaseURL + "/swagger"
 
+	// Load local SMTP setting (default: enabled)
+	var localSMTPEnabled bool
+	err = public.OptionsMgrInstance.GetOption(ctx, "local_smtp_enabled", &localSMTPEnabled)
+	if err != nil {
+		localSMTPEnabled = true // default to enabled
+	}
+	config.LocalSMTPEnabled = localSMTPEnabled
+
 	// Load blacklist configuration
 	blacklistConfig, err := loadBlacklistConfig(ctx)
 	if err == nil {

@@ -170,6 +170,17 @@ func PasswordPlainByEmail(ctx context.Context, email string) (string, error) {
 	return string(plainBytes), nil
 }
 
+// IsLocalSMTPEnabled checks if local SMTP sending is globally enabled.
+// Defaults to true if not set.
+func IsLocalSMTPEnabled() bool {
+	var enabled bool
+	err := public.OptionsMgrInstance.GetOption(context.Background(), "local_smtp_enabled", &enabled)
+	if err != nil {
+		return true // default enabled
+	}
+	return enabled
+}
+
 // IsSMTPAvailable checks if SMTP/mailbox is configured for a sender email.
 // Returns true if the mailbox exists and is active with valid credentials.
 func IsSMTPAvailable(senderEmail string) bool {

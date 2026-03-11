@@ -274,8 +274,8 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 				warmupIdentity = fmt.Sprintf("ses:%s:%s", sesAccount.Name, domain)
 				g.Log().Infof(ctx, "Task %d: Using SES domain-based warmup rate limiting: %s", taskId, warmupIdentity)
 			}
-		} else if mail_service.IsSMTPAvailable(task.Addresser) {
-			// No SES, but SMTP available → IP-based warmup
+		} else if mail_service.IsLocalSMTPEnabled() && mail_service.IsSMTPAvailable(task.Addresser) {
+			// No SES, but SMTP available and enabled → IP-based warmup
 			warmupIdentity, _ = public.GetServerIP()
 			g.Log().Debugf(ctx, "Task %d: Using IP-based warmup rate limiting: %s", taskId, warmupIdentity)
 		}
@@ -1247,7 +1247,11 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 		return e.sendEmailViaSESApi(ctx, currentTask, recipient, renderedContent, renderedSubject, unsubscribeURL, messageID)
 	}
 
-	// Fall back to SMTP (existing behavior)
+	// Fall back to SMTP if enabled
+	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "Local SMTP is disabled and no SES configured for", currentTask.Addresser)
+		return &SendResult{Success: false, Error: fmt.Errorf("local SMTP is disabled and no SES configured for this domain")}
+	}
 	return e.sendEmailViaSMTP(ctx, currentTask, recipient, renderedContent, renderedSubject, unsubscribeURL, messageID)
 }
 
@@ -1256,7 +1260,10 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 	sesSender, accountName, err := ses_api.GetSenderForEmail(ctx, task.Addresser)
 	if err != nil {
 		g.Log().Error(ctx, "Failed to create SES sender for", task.Addresser, ":", err)
-		// Fall back to SMTP
+		// Fall back to SMTP if enabled
+		if !mail_service.IsLocalSMTPEnabled() {
+			return &SendResult{Success: false, Error: fmt.Errorf("SES failed and local SMTP is disabled")}
+		}
 		return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
 	}
 
@@ -1339,6 +1346,12 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 				g.Log().Warning(ctx, "Failed to insert SES failure send stats:", err)
 			}
 		}()
+
+		// Try SMTP fallback if enabled
+		if mail_service.IsLocalSMTPEnabled() {
+			g.Log().Info(ctx, "SES failed, falling back to SMTP for", recipient.Recipient)
+			return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
+		}
 
 		return &SendResult{
 			RecipientID: recipient.Id,

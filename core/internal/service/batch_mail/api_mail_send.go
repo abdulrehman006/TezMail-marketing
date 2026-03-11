@@ -350,7 +350,10 @@ func sendApiMailWithSender(ctx context.Context, apiTemplate *entity.ApiTemplates
 		return nil
 	}
 
-	// Fall back to SMTP
+	// Fall back to SMTP if enabled
+	if !mail_service.IsLocalSMTPEnabled() {
+		return fmt.Errorf("local SMTP is disabled and no SES configured")
+	}
 	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(messageId)
 	if apiTemplate.FullName != "" {
@@ -445,7 +448,11 @@ func sendApiMail(ctx context.Context, apiTemplate *entity.ApiTemplates, subject 
 		return nil
 	}
 
-	// Fall back to SMTP
+	// Fall back to SMTP if enabled
+	if !mail_service.IsLocalSMTPEnabled() {
+		updateLogStatus(ctx, log.Id, 3, "local SMTP is disabled and no SES configured")
+		return fmt.Errorf("local SMTP is disabled and no SES configured")
+	}
 	sender, err := mail_service.NewEmailSenderWithLocal(log.Addresser)
 	if err != nil {
 		updateLogStatus(ctx, log.Id, 3, err.Error())

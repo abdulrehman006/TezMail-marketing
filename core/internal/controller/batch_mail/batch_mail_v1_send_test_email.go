@@ -89,7 +89,11 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 		return
 	}
 
-	// Fall back to SMTP
+	// Fall back to SMTP if enabled
+	if !mail_service.IsLocalSMTPEnabled() {
+		res.SetError(gerror.New(public.LangCtx(ctx, "Local SMTP is disabled and no SES configured for this domain")))
+		return
+	}
 	sender, err := mail_service.NewEmailSenderWithLocal(req.Addresser)
 	if err != nil {
 		res.Code = 400

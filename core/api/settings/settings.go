@@ -27,6 +27,8 @@ type ISettingsV1 interface {
 	SetBlacklistAutoScan(ctx context.Context, req *v1.SetBlacklistAutoScanReq) (res *v1.SetBlacklistAutoScanRes, err error)
 	SetBlacklistAlert(ctx context.Context, req *v1.SetBlacklistAlertReq) (res *v1.SetBlacklistAlertRes, err error)
 	SetBlacklistAlertSettings(ctx context.Context, req *v1.SetBlacklistAlertSettingsReq) (res *v1.SetBlacklistAlertSettingsRes, err error)
+	// Local SMTP Settings
+	SetLocalSMTP(ctx context.Context, req *v1.SetLocalSMTPReq) (res *v1.SetLocalSMTPRes, err error)
 	// SES Settings
 	GetSESConfig(ctx context.Context, req *v1.GetSESConfigReq) (res *v1.GetSESConfigRes, err error)
 	SaveSESAccount(ctx context.Context, req *v1.SaveSESAccountReq) (res *v1.SaveSESAccountRes, err error)

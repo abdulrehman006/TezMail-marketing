@@ -10,6 +10,17 @@
 				</div>
 			</template>
 
+			<!-- Local SMTP Toggle -->
+			<div class="flex items-center justify-between mb-16px p-12px rounded" style="background: var(--n-color-embedded)">
+				<div>
+					<span class="font-medium">Local SMTP Sending</span>
+					<p class="text-desc text-12px mt-4px">When disabled, emails will only be sent via SES API. Disable this if your server IP is blocked or has low reputation.</p>
+				</div>
+				<n-switch
+					:value="localSMTPEnabled"
+					@update:value="handleToggleLocalSMTP" />
+			</div>
+
 			<div class="flex items-center justify-between mb-12px">
 				<p class="text-desc text-12px">{{ $t('settings.ses.description') }}</p>
 				<n-button type="primary" size="small" @click="handleAdd">
@@ -125,12 +136,13 @@
 
 <script lang="tsx" setup>
 import { confirm } from '@/utils'
-import { getSESConfig, saveSESAccount, deleteSESAccount, testSESConnection, type SESAccount } from '@/api/modules/settings/common'
+import { getSESConfig, saveSESAccount, deleteSESAccount, testSESConnection, setLocalSMTP, getSystemConfig, type SESAccount } from '@/api/modules/settings/common'
 import message from '@/config/message'
 import type { FormInst, FormRules } from 'naive-ui'
 
 const { t } = useI18n()
 
+const localSMTPEnabled = ref(true)
 const sesAccounts = ref<SESAccount[]>([])
 const showModal = ref(false)
 const editingAccount = ref<SESAccount | null>(null)
@@ -314,8 +326,29 @@ const handleSave = async () => {
 	}
 }
 
+const loadLocalSMTPSetting = async () => {
+	try {
+		const res = await getSystemConfig()
+		if (res && res.data) {
+			localSMTPEnabled.value = res.data.local_smtp_enabled !== false
+		}
+	} catch (e) {
+		console.error('Failed to load local SMTP setting:', e)
+	}
+}
+
+const handleToggleLocalSMTP = async (enabled: boolean) => {
+	try {
+		await setLocalSMTP({ enabled })
+		localSMTPEnabled.value = enabled
+	} catch (e) {
+		console.error('Failed to toggle local SMTP:', e)
+	}
+}
+
 onMounted(() => {
 	loadSESConfig()
+	loadLocalSMTPSetting()
 })
 </script>
 

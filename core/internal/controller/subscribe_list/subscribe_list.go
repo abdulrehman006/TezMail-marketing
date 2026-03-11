@@ -208,7 +208,10 @@ func SendMail(ctx context.Context, emailHtml, email, subject, confirmUrl string)
 		return nil
 	}
 
-	// 7. Fall back to SMTP
+	// 7. Fall back to SMTP if enabled
+	if !mail_service.IsLocalSMTPEnabled() {
+		return gerror.New(public.LangCtx(ctx, "Local SMTP is disabled and no SES configured"))
+	}
 	sender, err := mail_service.NewEmailSenderWithLocal(address)
 	if err != nil {
 		return gerror.New(public.LangCtx(ctx, "Failed to create a sender"))

@@ -158,7 +158,10 @@ func sendConfirmationEmail(ctx context.Context, email, name string) error {
 		return nil
 	}
 
-	// Fall back to SMTP
+	// Fall back to SMTP if enabled
+	if !mail_service.IsLocalSMTPEnabled() {
+		return fmt.Errorf("local SMTP is disabled and no SES configured")
+	}
 	sender, err := mail_service.NewEmailSenderWithLocal(noreplyEmail)
 	if err != nil {
 		return fmt.Errorf("failed to create email sender: %w", err)
