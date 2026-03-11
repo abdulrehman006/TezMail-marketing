@@ -168,7 +168,25 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 		return nil, nil
 	}
 
-	mapping, err := g.DB().Model("bm_ses_domain_mapping").Where("domain", domain).One()
+	// Diagnostic: count total rows in bm_ses_domain_mapping
+	totalCount, countErr := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Count()
+	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: total rows in bm_ses_domain_mapping=%d, countErr=%v", totalCount, countErr)
+
+	// Diagnostic: list all domains in mapping table
+	allMappings, allErr := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").All()
+	if allErr != nil {
+		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: error listing all mappings: %v", allErr)
+	} else {
+		for i, m := range allMappings {
+			g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: mapping[%d] domain='%s' account_id=%d", i, m["domain"].String(), m["account_id"].Int64())
+		}
+	}
+
+	// Diagnostic: count total rows in bm_ses_accounts
+	acctCount, acctErr := g.DB().Ctx(ctx).Model("bm_ses_accounts").Count()
+	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: total rows in bm_ses_accounts=%d, countErr=%v", acctCount, acctErr)
+
+	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("domain", domain).One()
 	if err != nil {
 		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: domain mapping query error: %v", err)
 		return nil, err
@@ -177,7 +195,7 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	var accountId int64
 	if mapping.IsEmpty() {
 		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no exact domain match for '%s', trying wildcard", domain)
-		mapping, err = g.DB().Model("bm_ses_domain_mapping").Where("domain", "*").One()
+		mapping, err = g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("domain", "*").One()
 		if err != nil {
 			g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: wildcard query error: %v", err)
 			return nil, err
@@ -190,7 +208,7 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	accountId = mapping["account_id"].Int64()
 	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: found mapping, account_id=%d", accountId)
 
-	record, err := g.DB().Model("bm_ses_accounts").Where("id", accountId).Where("enabled", 1).One()
+	record, err := g.DB().Ctx(ctx).Model("bm_ses_accounts").Where("id", accountId).Where("enabled", 1).One()
 	if err != nil {
 		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account query error: %v", err)
 		return nil, err
