@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -186,7 +187,7 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	acctCount, acctErr := g.DB().Ctx(ctx).Model("bm_ses_accounts").Count()
 	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: total rows in bm_ses_accounts=%d, countErr=%v", acctCount, acctErr)
 
-	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("domain", domain).One()
+	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("TRIM(domain) = ?", domain).One()
 	if err != nil {
 		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: domain mapping query error: %v", err)
 		return nil, err
@@ -195,7 +196,7 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	var accountId int64
 	if mapping.IsEmpty() {
 		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no exact domain match for '%s', trying wildcard", domain)
-		mapping, err = g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("domain", "*").One()
+		mapping, err = g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("TRIM(domain) = ?", "*").One()
 		if err != nil {
 			g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: wildcard query error: %v", err)
 			return nil, err
@@ -292,6 +293,7 @@ func updateAccountDomains(ctx context.Context, accountId int64, domains []string
 	}
 
 	for _, domain := range domains {
+		domain = strings.TrimSpace(domain)
 		if domain == "" {
 			continue
 		}
