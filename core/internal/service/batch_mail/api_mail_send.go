@@ -347,13 +347,16 @@ func sendApiMailWithSender(ctx context.Context, apiTemplate *entity.ApiTemplates
 	// Try SES API first
 	sentViaSES, _ := ses_api.TrySendEmail(ctx, log.Addresser, []string{log.Recipient}, subject, content, "", apiTemplate.FullName, messageId, nil)
 	if sentViaSES {
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] api_mail_send.sendWithSender: sent via SES for", log.Addresser, "→", log.Recipient)
 		return nil
 	}
 
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] api_mail_send.sendWithSender: BLOCKED - local SMTP disabled, no SES for", log.Addresser)
 		return fmt.Errorf("local SMTP is disabled and no SES configured")
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] api_mail_send.sendWithSender: ALLOWED - falling back to SMTP for", log.Addresser, "→", log.Recipient)
 	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(messageId)
 	if apiTemplate.FullName != "" {
@@ -444,15 +447,18 @@ func sendApiMail(ctx context.Context, apiTemplate *entity.ApiTemplates, subject 
 	// Try SES API first
 	sentViaSES, _ := ses_api.TrySendEmail(ctx, log.Addresser, []string{log.Recipient}, subject, content, "", apiTemplate.FullName, messageId, nil)
 	if sentViaSES {
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] api_mail_send.sendSingle: sent via SES for", log.Addresser, "→", log.Recipient)
 		updateLogStatus(ctx, log.Id, 2, "")
 		return nil
 	}
 
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] api_mail_send.sendSingle: BLOCKED - local SMTP disabled, no SES for", log.Addresser)
 		updateLogStatus(ctx, log.Id, 3, "local SMTP is disabled and no SES configured")
 		return fmt.Errorf("local SMTP is disabled and no SES configured")
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] api_mail_send.sendSingle: ALLOWED - falling back to SMTP for", log.Addresser, "→", log.Recipient)
 	sender, err := mail_service.NewEmailSenderWithLocal(log.Addresser)
 	if err != nil {
 		updateLogStatus(ctx, log.Id, 3, err.Error())

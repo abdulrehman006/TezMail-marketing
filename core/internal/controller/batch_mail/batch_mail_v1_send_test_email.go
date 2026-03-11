@@ -81,6 +81,7 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 	// Try SES API first, fall back to SMTP
 	sentViaSES, _ := ses_api.TrySendEmail(ctx, req.Addresser, []string{req.Recipient}, subject, content, "", "", "", headers)
 	if sentViaSES {
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] SendTestEmail: sent via SES for", req.Addresser, "→", req.Recipient)
 		_ = public.WriteLog(ctx, public.LogParams{
 			Type: consts.LOGTYPE.Task,
 			Log:  "Send test email (SES API) :" + subject + " to " + req.Recipient + " successfully",
@@ -91,9 +92,11 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] SendTestEmail: BLOCKED - local SMTP disabled, no SES for", req.Addresser)
 		res.SetError(gerror.New(public.LangCtx(ctx, "Local SMTP is disabled and no SES configured for this domain")))
 		return
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] SendTestEmail: ALLOWED - falling back to SMTP for", req.Addresser, "→", req.Recipient)
 	sender, err := mail_service.NewEmailSenderWithLocal(req.Addresser)
 	if err != nil {
 		res.Code = 400

@@ -205,13 +205,16 @@ func SendMail(ctx context.Context, emailHtml, email, subject, confirmUrl string)
 	// 6. Try SES API first, fall back to SMTP
 	sentViaSES, _ := ses_api.TrySendEmail(ctx, address, []string{email}, personalizedSubject, personalizedContent, "", "noreply", "", nil)
 	if sentViaSES {
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] subscribe_list: sent confirmation via SES to", email)
 		return nil
 	}
 
 	// 7. Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] subscribe_list: BLOCKED - local SMTP disabled, no SES for", address)
 		return gerror.New(public.LangCtx(ctx, "Local SMTP is disabled and no SES configured"))
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] subscribe_list: ALLOWED - falling back to SMTP for", address, "→", email)
 	sender, err := mail_service.NewEmailSenderWithLocal(address)
 	if err != nil {
 		return gerror.New(public.LangCtx(ctx, "Failed to create a sender"))

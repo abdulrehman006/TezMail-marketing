@@ -154,14 +154,16 @@ func sendConfirmationEmail(ctx context.Context, email, name string) error {
 	// Try SES API first, fall back to SMTP
 	sentViaSES, _ := ses_api.TrySendEmail(ctx, noreplyEmail, []string{email}, subject, content, "", "Newsletter Team", "", nil)
 	if sentViaSES {
-		g.Log().Info(ctx, "Confirmation email sent via SES API to %s", email)
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] campaign_form: sent confirmation via SES to", email)
 		return nil
 	}
 
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] campaign_form: BLOCKED - local SMTP disabled, no SES for", noreplyEmail)
 		return fmt.Errorf("local SMTP is disabled and no SES configured")
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] campaign_form: ALLOWED - falling back to SMTP for", noreplyEmail, "→", email)
 	sender, err := mail_service.NewEmailSenderWithLocal(noreplyEmail)
 	if err != nil {
 		return fmt.Errorf("failed to create email sender: %w", err)

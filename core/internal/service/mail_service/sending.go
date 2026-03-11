@@ -176,8 +176,10 @@ func IsLocalSMTPEnabled() bool {
 	var enabled bool
 	err := public.OptionsMgrInstance.GetOption(context.Background(), "local_smtp_enabled", &enabled)
 	if err != nil {
+		g.Log().Debug(context.Background(), "[LOCAL-SMTP-GUARD] local_smtp_enabled not set in options, defaulting to TRUE")
 		return true // default enabled
 	}
+	g.Log().Debugf(context.Background(), "[LOCAL-SMTP-GUARD] local_smtp_enabled = %v", enabled)
 	return enabled
 }
 

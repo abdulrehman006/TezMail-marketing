@@ -277,7 +277,9 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		} else if mail_service.IsLocalSMTPEnabled() && mail_service.IsSMTPAvailable(task.Addresser) {
 			// No SES, but SMTP available and enabled → IP-based warmup
 			warmupIdentity, _ = public.GetServerIP()
-			g.Log().Debugf(ctx, "Task %d: Using IP-based warmup rate limiting: %s", taskId, warmupIdentity)
+			g.Log().Debugf(ctx, "[LOCAL-SMTP-GUARD] Task %d: ALLOWED warmup - local SMTP enabled, using IP-based rate limiting: %s", taskId, warmupIdentity)
+		} else {
+			g.Log().Debugf(ctx, "[LOCAL-SMTP-GUARD] Task %d: No warmup - local SMTP disabled or SMTP not available for %s", taskId, task.Addresser)
 		}
 	}
 
@@ -1249,9 +1251,10 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
-		g.Log().Warning(ctx, "Local SMTP is disabled and no SES configured for", currentTask.Addresser)
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmail: BLOCKED - Local SMTP disabled, no SES for", currentTask.Addresser)
 		return &SendResult{Success: false, Error: fmt.Errorf("local SMTP is disabled and no SES configured for this domain")}
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmail: ALLOWED - falling back to SMTP for", currentTask.Addresser)
 	return e.sendEmailViaSMTP(ctx, currentTask, recipient, renderedContent, renderedSubject, unsubscribeURL, messageID)
 }
 
@@ -1262,8 +1265,10 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		g.Log().Error(ctx, "Failed to create SES sender for", task.Addresser, ":", err)
 		// Fall back to SMTP if enabled
 		if !mail_service.IsLocalSMTPEnabled() {
+			g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: BLOCKED - SES sender failed, local SMTP disabled for", task.Addresser)
 			return &SendResult{Success: false, Error: fmt.Errorf("SES failed and local SMTP is disabled")}
 		}
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: ALLOWED - SES sender failed, falling back to SMTP for", task.Addresser)
 		return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
 	}
 
@@ -1349,9 +1354,10 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 
 		// Try SMTP fallback if enabled
 		if mail_service.IsLocalSMTPEnabled() {
-			g.Log().Info(ctx, "SES failed, falling back to SMTP for", recipient.Recipient)
+			g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: ALLOWED - SES send failed, falling back to SMTP for", recipient.Recipient)
 			return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
 		}
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: BLOCKED - SES send failed, local SMTP disabled, no fallback for", recipient.Recipient)
 
 		return &SendResult{
 			RecipientID: recipient.Id,

@@ -212,13 +212,16 @@ func sendQuotaAlertEmail(ctx context.Context, a quotaAlertTarget) error {
 	// Try SES API first, fall back to SMTP
 	sentViaSES, _ := ses_api.TrySendEmail(ctx, fromAddress, []string{toAddress}, subject, "", content, "Quota Monitor", "", nil)
 	if sentViaSES {
+		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] check_quota_alerts: sent via SES for", fromAddress, "→", toAddress)
 		return nil
 	}
 
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
+		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] check_quota_alerts: BLOCKED - local SMTP disabled, no SES for", fromAddress)
 		return fmt.Errorf("local SMTP is disabled and no SES configured")
 	}
+	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] check_quota_alerts: ALLOWED - falling back to SMTP for", fromAddress, "→", toAddress)
 	sender, err := mail_service.NewEmailSenderWithLocal(fromAddress)
 	if err != nil {
 		return err
