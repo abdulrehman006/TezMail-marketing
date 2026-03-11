@@ -1,8 +1,11 @@
 package ses_api
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"mime/quotedprintable"
 	"strings"
 	"time"
 
@@ -184,17 +187,17 @@ func (s *SESSender) buildRawMessage(input *SendEmailInput) string {
 	// Add X-Mailer
 	builder.WriteString("X-Mailer: TezMail\r\n")
 
-	// Add Content-Type header
+	// Add Content-Type and properly encoded body
 	if input.HtmlBody != "" {
 		builder.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-		builder.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
+		builder.WriteString("Content-Transfer-Encoding: base64\r\n")
 		builder.WriteString("\r\n")
-		builder.WriteString(input.HtmlBody)
+		builder.WriteString(encodeBase64Lines([]byte(input.HtmlBody)))
 	} else {
 		builder.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-		builder.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
+		builder.WriteString("Content-Transfer-Encoding: base64\r\n")
 		builder.WriteString("\r\n")
-		builder.WriteString(input.TextBody)
+		builder.WriteString(encodeBase64Lines([]byte(input.TextBody)))
 	}
 
 	return builder.String()
@@ -232,34 +235,33 @@ func encodeSubject(subject string) string {
 	return fmt.Sprintf("=?UTF-8?B?%s?=", base64Encode(subject))
 }
 
-// base64Encode encodes string to base64
+// base64Encode encodes string to base64 (single line, for headers)
 func base64Encode(s string) string {
-	return string(encodeBase64([]byte(s)))
+	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-// encodeBase64 encodes bytes to base64
-func encodeBase64(data []byte) []byte {
-	const base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-
-	result := make([]byte, 0, (len(data)+2)/3*4)
-
-	for i := 0; i < len(data); i += 3 {
-		var b uint32
-		remaining := len(data) - i
-
-		if remaining >= 3 {
-			b = uint32(data[i])<<16 | uint32(data[i+1])<<8 | uint32(data[i+2])
-			result = append(result, base64Chars[b>>18&0x3F], base64Chars[b>>12&0x3F], base64Chars[b>>6&0x3F], base64Chars[b&0x3F])
-		} else if remaining == 2 {
-			b = uint32(data[i])<<16 | uint32(data[i+1])<<8
-			result = append(result, base64Chars[b>>18&0x3F], base64Chars[b>>12&0x3F], base64Chars[b>>6&0x3F], '=')
-		} else {
-			b = uint32(data[i]) << 16
-			result = append(result, base64Chars[b>>18&0x3F], base64Chars[b>>12&0x3F], '=', '=')
+// encodeBase64Lines encodes data to base64 with line wrapping at 76 chars (RFC 2045)
+func encodeBase64Lines(data []byte) string {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	var result strings.Builder
+	for i := 0; i < len(encoded); i += 76 {
+		end := i + 76
+		if end > len(encoded) {
+			end = len(encoded)
 		}
+		result.WriteString(encoded[i:end])
+		result.WriteString("\r\n")
 	}
+	return result.String()
+}
 
-	return result
+// qpEncode encodes content using quoted-printable encoding
+func qpEncode(content string) string {
+	var buf bytes.Buffer
+	w := quotedprintable.NewWriter(&buf)
+	w.Write([]byte(content))
+	w.Close()
+	return buf.String()
 }
 
 // TrySendEmail attempts to send email via SES API first (if configured for the sender domain),
