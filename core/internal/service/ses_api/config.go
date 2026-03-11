@@ -228,16 +228,24 @@ func UpdateAccountStatus(accountName string, status string, message string, veri
 func GetAccountForDomain(senderEmail string) *AccountConfig {
 	// First, try to get from database
 	ctx := context.Background()
+	g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomain called for: %s", senderEmail)
 	dbAccount, err := GetAccountForDomainFromDB(ctx, senderEmail)
-	if err == nil && dbAccount != nil {
+	if err != nil {
+		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB error: %v", err)
+	}
+	if dbAccount != nil {
+		g.Log().Infof(ctx, "[SES-DEBUG] Found DB account: name=%s, region=%s, status=%s, hasAccessKey=%v, hasSecretKey=%v",
+			dbAccount.Name, dbAccount.Region, dbAccount.Status, dbAccount.AccessKey != "", dbAccount.SecretKey != "")
 		return dbAccount
 	}
+	g.Log().Info(ctx, "[SES-DEBUG] No DB account found, falling back to file config")
 
 	// Fall back to file config
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 
 	if currentConfig == nil || !currentConfig.Enabled {
+		g.Log().Infof(ctx, "[SES-DEBUG] File config: currentConfig=%v, enabled=%v", currentConfig != nil, currentConfig != nil && currentConfig.Enabled)
 		return nil
 	}
 

@@ -267,16 +267,20 @@ func encodeBase64(data []byte) []byte {
 // should skip SMTP. If false, the caller should proceed with SMTP as usual.
 // This is the single shared method all email sending paths should use.
 func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, subject, htmlBody, textBody, displayName, messageID string, extraHeaders map[string]string) (sentViaSES bool, err error) {
+	g.Log().Infof(ctx, "[SES-DEBUG] TrySendEmail called: sender=%s, recipients=%v, subject=%s", senderEmail, recipients, subject)
 	account := GetAccountForDomain(senderEmail)
 	if account == nil {
+		g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: GetAccountForDomain returned nil, no SES for", senderEmail)
 		return false, nil // No SES configured, caller should use SMTP
 	}
+	g.Log().Infof(ctx, "[SES-DEBUG] TrySendEmail: got account name=%s, region=%s, status=%s", account.Name, account.Region, account.Status)
 
 	sesSender, _, sesErr := GetSenderForEmail(ctx, senderEmail)
 	if sesErr != nil {
-		g.Log().Warning(ctx, "Failed to create SES sender for", senderEmail, ", falling back to SMTP:", sesErr)
+		g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: Failed to create SES sender for", senderEmail, "error:", sesErr)
 		return false, nil
 	}
+	g.Log().Info(ctx, "[SES-DEBUG] TrySendEmail: SES sender created successfully")
 
 	// Build From address with display name
 	fromAddress := senderEmail
@@ -294,13 +298,14 @@ func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, 
 		MessageID: messageID,
 	}
 
+	g.Log().Info(ctx, "[SES-DEBUG] TrySendEmail: calling SendEmail now...")
 	result := sesSender.SendEmail(ctx, input)
 	if result.Success {
-		g.Log().Debug(ctx, "Email sent via SES API to", recipients)
+		g.Log().Infof(ctx, "[SES-DEBUG] TrySendEmail: SUCCESS! Email sent via SES API to %v, MessageID=%s", recipients, result.MessageID)
 		return true, nil
 	}
 
-	g.Log().Warning(ctx, "SES API send failed, falling back to SMTP:", result.Error)
+	g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail: SES send FAILED, error: %v", result.Error)
 	return false, nil
 }
 

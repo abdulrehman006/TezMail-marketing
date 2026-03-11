@@ -162,37 +162,49 @@ func DeleteAccountFromDB(ctx context.Context, id int64) error {
 
 func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*AccountConfig, error) {
 	domain := extractDomain(senderEmail)
+	g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: email=%s, domain=%s", senderEmail, domain)
 	if domain == "" {
+		g.Log().Warning(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: empty domain extracted")
 		return nil, nil
 	}
 
 	mapping, err := g.DB().Model("bm_ses_domain_mapping").Where("domain", domain).One()
 	if err != nil {
+		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: domain mapping query error: %v", err)
 		return nil, err
 	}
 
 	var accountId int64
 	if mapping.IsEmpty() {
+		g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no exact domain match for '%s', trying wildcard", domain)
 		mapping, err = g.DB().Model("bm_ses_domain_mapping").Where("domain", "*").One()
 		if err != nil {
+			g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: wildcard query error: %v", err)
 			return nil, err
 		}
 		if mapping.IsEmpty() {
+			g.Log().Info(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no wildcard mapping either, returning nil")
 			return nil, nil
 		}
 	}
 	accountId = mapping["account_id"].Int64()
+	g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: found mapping, account_id=%d", accountId)
 
 	record, err := g.DB().Model("bm_ses_accounts").Where("id", accountId).Where("enabled", 1).One()
 	if err != nil {
+		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account query error: %v", err)
 		return nil, err
 	}
 	if record.IsEmpty() {
+		g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no enabled account found for id=%d", accountId)
 		return nil, nil
 	}
 
 	status := record["status"].String()
+	g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account found - name=%s, status=%s, region=%s",
+		record["name"].String(), status, record["region"].String())
 	if status != StatusConnected && status != StatusPending {
+		g.Log().Infof(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account status '%s' not valid (need connected/pending)", status)
 		return nil, nil
 	}
 
