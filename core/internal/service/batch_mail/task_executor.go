@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -887,6 +888,40 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 		err := e.pool.Submit(func() {
 			defer e.wg.Done()
 			defer sendWg.Done()
+
+			// Guarantee exactly one result reaches the collector.
+			//
+			// safeSend used to be the last statement in this function, so a
+			// panic anywhere above it delivered nothing. The pool's panic
+			// handler kept the process alive and the WaitGroups still fired,
+			// but the recipient was left at is_sent=2 -- invisible to both the
+			// work query and the completion count, so the task could never
+			// finish and the scheduler relaunched it every 5 seconds forever.
+			//
+			// Delivering from a defer means the result is sent whether this
+			// function returns normally or unwinds through a panic.
+			var result *SendResult
+			defer func() {
+				if r := recover(); r != nil {
+					g.Log().Errorf(ctx, "recovered panic sending to recipient %d: %v\n%s",
+						recipientBak.Id, r, debug.Stack())
+					result = nil // fall through to the safety net below
+				}
+				if result == nil {
+					// Retryable: a panic says something is wrong with our code
+					// or this particular message, not with the recipient, and
+					// the attempt cap bounds any repeat.
+					result = &SendResult{
+						RecipientID:  recipientBak.Id,
+						Success:      false,
+						Error:        fmt.Errorf("send aborted unexpectedly"),
+						Retryable:    true,
+						AttemptCount: recipientBak.AttemptCount,
+					}
+					e.failedCount.Add(1)
+				}
+				safeSend(result)
+			}()
 			// print task id
 			//g.Log().Debug(ctx, "current task id", task.Id, "sender-", task.Addresser, "recipient-", recipientBak.Recipient)
 			// personalize content
@@ -894,23 +929,23 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 			//personalized := emailContent
 
 			// send email
-			result := e.sendEmail(ctx, task, recipientBak, personalized)
+			// Assigns to the outer `result`, which the deferred block above
+			// delivers. Do not shadow it with := or the panic-safety net will
+			// send a placeholder instead of the real outcome.
+			result = e.sendEmail(ctx, task, recipientBak, personalized)
 
 			// use sendEmailMock (Don't use in production)
-			// result := e.sendEmailMock(ctx, task, recipientBak, personalized)
+			// result = e.sendEmailMock(ctx, task, recipientBak, personalized)
 
 			// record send
 			e.rateController.RecordSend()
 
 			// update stats
-			if result.Success {
+			if result != nil && result.Success {
 				e.sentCount.Add(1)
 			} else {
 				e.failedCount.Add(1)
 			}
-
-			// safe send result
-			safeSend(result)
 		})
 
 		if err != nil {
@@ -1456,7 +1491,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 
 	// Record the SES-sent email in mailstat tables for statistics tracking
 	// Since SES API bypasses Postfix, we need to manually insert the stats
-	go func() {
+	safeGo(ctx, "SES success stats writer", func() {
 		nowMillis := time.Now().UnixMilli()
 		cleanMessageID := strings.Trim(messageID, "<>")
 
@@ -1499,7 +1534,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		if err != nil {
 			g.Log().Warning(ctx, "Failed to insert SES send stats:", err)
 		}
-	}()
+	})
 
 	// Return the original messageID we generated (not the SES message ID)
 	// This ensures recipient_info.message_id matches mailstat_message_ids.message_id
@@ -1565,6 +1600,32 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 		Success:     true,
 		Error:       nil,
 	}
+}
+
+// safeGo runs fn in a goroutine that cannot take the process down with it.
+//
+// Go has no default recovery for goroutines: an unrecovered panic anywhere
+// kills the whole process, not just that goroutine. The send path spawns
+// several bare goroutines for statistics and bookkeeping, and a panic in any of
+// them -- a nil map, an unexpected database shape -- would stop every campaign
+// on the server, not merely lose one stats row.
+//
+// The stack is logged so a swallowed panic is still diagnosable. This is a
+// safety net, not a licence to ignore errors: anything expected should still be
+// returned and handled normally.
+//
+// IMPORTANT: recover() only catches panics. It does NOT catch fatal runtime
+// errors such as "concurrent map iteration and map write" -- those terminate
+// the process regardless. Only correct locking prevents those.
+func safeGo(ctx context.Context, name string, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				g.Log().Errorf(ctx, "recovered panic in %s: %v\n%s", name, r, debug.Stack())
+			}
+		}()
+		fn()
+	}()
 }
 
 // maxSendAttempts caps how many times a single recipient is tried before being
@@ -1671,7 +1732,7 @@ func (e *TaskExecutor) recordSESFailureStats(
 		errorDesc = truncateUTF8(sendErr.Error(), 200)
 	}
 
-	go func() {
+	safeGo(ctx, "SES failure stats writer", func() {
 		nowMillis := time.Now().UnixMilli()
 		cleanMessageID := strings.Trim(messageID, "<>")
 		sesPostfixID := sesStatsKey("ses-fail-", "", cleanMessageID)
@@ -1707,7 +1768,7 @@ func (e *TaskExecutor) recordSESFailureStats(
 		}); err != nil {
 			g.Log().Warning(ctx, "Failed to insert SES failure send stats:", err)
 		}
-	}()
+	})
 }
 
 // sesStatsKey builds the synthetic postfix_message_id under which a SES send

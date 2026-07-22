@@ -1,11 +1,13 @@
 package batch_mail
 
 import (
+	"billionmail-core/internal/model/entity"
 	"context"
 	"errors"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -214,6 +216,131 @@ func TestTruncateError_BoundsLengthAndHandlesNil(t *testing.T) {
 	if got := truncateError(short); got != "throttled" {
 		t.Errorf("short error was altered: %q", got)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Panic safety
+// ---------------------------------------------------------------------------
+
+func TestSafeGo_PanicDoesNotKillTheProcess(t *testing.T) {
+	// Go has no default recovery for goroutines: an unrecovered panic anywhere
+	// terminates the whole process. If this test completes at all, the panic
+	// was contained.
+	done := make(chan struct{})
+
+	safeGo(context.Background(), "test panic", func() {
+		defer close(done)
+		panic("simulated failure in a stats writer")
+	})
+
+	select {
+	case <-done:
+		// Reached the deferred close, so the panic was recovered rather than
+		// propagating out of the goroutine.
+	case <-time.After(5 * time.Second):
+		t.Fatal("safeGo goroutine never ran")
+	}
+}
+
+func TestSafeGo_NilPointerPanicIsContained(t *testing.T) {
+	// The realistic shape: a nil dereference inside a stats writer.
+	done := make(chan struct{})
+
+	safeGo(context.Background(), "nil deref", func() {
+		defer close(done)
+		var m map[string]string
+		m["boom"] = "this panics: assignment to entry in nil map"
+	})
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("goroutine did not complete")
+	}
+}
+
+func TestSafeGo_NormalExecutionIsUnaffected(t *testing.T) {
+	// The safety net must not change behaviour when nothing goes wrong.
+	result := make(chan int, 1)
+	safeGo(context.Background(), "normal work", func() {
+		result <- 42
+	})
+
+	select {
+	case v := <-result:
+		if v != 42 {
+			t.Errorf("got %d, want 42", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("goroutine did not run")
+	}
+}
+
+// TestSendResultDelivery_SurvivesPanic models the pool-submitted function's
+// contract: exactly one result must reach the collector, whether the send
+// returns normally or unwinds through a panic.
+//
+// Before this, safeSend was the last statement, so a panic delivered nothing --
+// leaving the recipient stuck at is_sent=2, invisible to both the work query
+// and the completion count, so the task could never finish.
+func TestSendResultDelivery_SurvivesPanic(t *testing.T) {
+	deliver := func(shouldPanic bool) (delivered []*SendResult) {
+		recipient := &entity.RecipientInfo{Id: 7, AttemptCount: 1}
+
+		func() {
+			var result *SendResult
+			defer func() {
+				if r := recover(); r != nil {
+					result = nil
+				}
+				if result == nil {
+					result = &SendResult{
+						RecipientID:  recipient.Id,
+						Success:      false,
+						Error:        errors.New("send aborted unexpectedly"),
+						Retryable:    true,
+						AttemptCount: recipient.AttemptCount,
+					}
+				}
+				delivered = append(delivered, result)
+			}()
+
+			if shouldPanic {
+				panic("boom inside sendEmail")
+			}
+			result = &SendResult{RecipientID: recipient.Id, Success: true}
+		}()
+		return delivered
+	}
+
+	t.Run("normal send delivers the real result", func(t *testing.T) {
+		got := deliver(false)
+		if len(got) != 1 {
+			t.Fatalf("delivered %d results, want exactly 1", len(got))
+		}
+		if !got[0].Success {
+			t.Error("successful send was not reported as success")
+		}
+	})
+
+	t.Run("panicking send still delivers a result", func(t *testing.T) {
+		got := deliver(true)
+		if len(got) != 1 {
+			t.Fatalf("delivered %d results, want exactly 1", len(got))
+		}
+		if got[0].Success {
+			t.Error("panic was reported as a successful send")
+		}
+		if got[0].RecipientID != 7 {
+			t.Errorf("RecipientID = %d, want 7 -- a zero here strands the recipient", got[0].RecipientID)
+		}
+		if !got[0].Retryable {
+			t.Error("panic result should be retryable, not written off")
+		}
+		if got[0].AttemptCount != 1 {
+			t.Errorf("AttemptCount = %d, want the recipient's existing count", got[0].AttemptCount)
+		}
+	})
 }
 
 // TestGetTaskIdFromContext_ConcurrentWithRegistration reproduces the crash
