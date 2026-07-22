@@ -129,10 +129,17 @@ type RecipientInfo struct {
 	Id         int    `json:"id"          dc:"Recipient ID"`
 	TaskId     int    `json:"task_id"     dc:"Task ID"`
 	Recipient  string `json:"recipient"   dc:"Recipient Email"`
-	IsSent     int    `json:"is_sent"     dc:"Send Status"`
-	SentTime   int    `json:"sent_time"   dc:"Send Time"`
+	IsSent     int    `json:"is_sent"     dc:"Dispatch state (0 pending, 2 claimed, 1 terminal)"`
+	SentTime   int    `json:"sent_time"   dc:"Send Time, or the earliest retry time while pending"`
 	MessageId  string `json:"message_id"  dc:"Email Message-ID"`
 	CreateTime int    `json:"create_time" dc:"Create Time"`
+
+	// Outcome and retry bookkeeping. is_sent records only dispatch state --
+	// a terminal row is 1 whether it was delivered or gave up -- so these carry
+	// what actually happened.
+	AttemptCount int    `json:"attempt_count" dc:"Send attempts made so far"`
+	SendFailed   int    `json:"send_failed"   dc:"1 when terminal because it failed, not because it was delivered"`
+	LastError    string `json:"last_error"    dc:"Most recent failure reason"`
 }
 
 type AbnormalRecipient struct {

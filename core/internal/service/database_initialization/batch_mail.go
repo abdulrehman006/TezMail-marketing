@@ -218,6 +218,17 @@ func init() {
 		_ = AddColumnIfNotExists("bm_contacts", "status", "INTEGER", "1", true)
 		_ = AddColumnIfNotExists("bm_contacts", "last_active_at", "INTEGER", "0", true)
 
+		// recipient_info
+		//
+		// is_sent alone could not distinguish a delivered recipient from a
+		// failed one -- both were written as 1 -- so failures were invisible and
+		// could never be retried. These columns add the outcome and the retry
+		// bookkeeping without changing is_sent's meaning, so every existing
+		// query that counts is_sent=1 keeps returning exactly what it did.
+		_ = AddColumnIfNotExists("recipient_info", "attempt_count", "SMALLINT", "0", true)
+		_ = AddColumnIfNotExists("recipient_info", "send_failed", "SMALLINT", "0", true)
+		_ = AddColumnIfNotExists("recipient_info", "last_error", "TEXT", "''", false)
+
 		//  api_mail_logs
 		_ = AddColumnIfNotExists("api_mail_logs", "status", "SMALLINT", "0", true)
 		_ = AddColumnIfNotExists("api_mail_logs", "error_message", "TEXT", "''", false)

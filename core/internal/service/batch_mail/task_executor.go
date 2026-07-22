@@ -91,6 +91,39 @@ func CleanupIdleExecutors() {
 	}
 }
 
+// RecoverOrphanedRecipients releases recipients that were claimed for sending
+// but whose process died before the outcome was recorded.
+//
+// getNextRecipientBatch marks a batch is_sent=2 *before* dispatching it. If the
+// container restarts mid-batch those rows stay at 2 forever: the work query
+// only selects is_sent=0 and the completion check only counts is_sent=1, so the
+// task can never reach its total. It stays task_process=1 and the 5s scheduler
+// relaunches it every 5 seconds indefinitely, while those recipients are never
+// sent. The only existing reset was reachable through PauseTask.
+//
+// Call this ONCE at startup, before the task scheduler is registered. At that
+// point no executor is running in this process, so every is_sent=2 row is by
+// definition an orphan from a previous life.
+//
+// Single-instance assumption: the task scheduler already has no cross-instance
+// locking, so two cores against one database would double-send regardless. This
+// does not make that worse, but it must not be moved onto a periodic timer,
+// where it would race with a live batch and cause duplicate delivery.
+func RecoverOrphanedRecipients(ctx context.Context) {
+	result, err := g.DB().Model("recipient_info").
+		Where("is_sent", 2).
+		Data(g.Map{"is_sent": 0}).
+		Update()
+	if err != nil {
+		g.Log().Error(ctx, "failed to recover orphaned recipients on startup:", err)
+		return
+	}
+
+	if n, _ := result.RowsAffected(); n > 0 {
+		g.Log().Warningf(ctx, "recovered %d recipient(s) left mid-send by a previous run; they will be retried", n)
+	}
+}
+
 // ProcessEmailTasks
 func ProcessEmailTasks(ctx context.Context) {
 	// get pending tasks
@@ -175,6 +208,15 @@ type SendResult struct {
 	Success     bool
 	MessageID   string
 	Error       error
+
+	// Retryable says the failure looks transient, so the recipient should go
+	// back in the queue rather than being written off. Only meaningful when
+	// Success is false.
+	Retryable bool
+
+	// AttemptCount is how many attempts this recipient had already had before
+	// the one that just finished. Used to decide when to stop retrying.
+	AttemptCount int
 }
 
 // NewTaskExecutor create task executor
@@ -875,10 +917,14 @@ func (e *TaskExecutor) processRecipientBatch(ctx context.Context, task *entity.E
 			sendWg.Done() // reduce send wait count
 
 			// create failed result
+			// Pool saturation or shutdown says nothing about the recipient, so
+			// requeue rather than writing them off.
 			failResult := &SendResult{
-				RecipientID: recipient.Id,
-				Success:     false,
-				Error:       fmt.Errorf("failed to submit to worker pool: %w", err),
+				RecipientID:  recipient.Id,
+				Success:      false,
+				Error:        fmt.Errorf("failed to submit to worker pool: %w", err),
+				Retryable:    true,
+				AttemptCount: recipient.AttemptCount,
 			}
 
 			// safe send result
@@ -954,7 +1000,8 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 	const flushInterval = 200 * time.Millisecond
 
 	successResults := make([]*SendResult, 0, batchSize)
-	failedIDs := make([]int, 0, batchSize)
+	retryFailures := make([]*SendResult, 0, batchSize)
+	terminalFailures := make([]*SendResult, 0, batchSize)
 
 	// create ticker to flush results
 	ticker := time.NewTicker(flushInterval)
@@ -962,7 +1009,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 	// flush function
 	flushUpdates := func() {
-		if len(successResults) == 0 && len(failedIDs) == 0 {
+		if len(successResults) == 0 && len(retryFailures) == 0 && len(terminalFailures) == 0 {
 			return
 		}
 
@@ -1017,25 +1064,71 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 			successResults = successResults[:0]
 		}
 
-		// clear failed records
-		if len(failedIDs) > 0 {
+		// Failures split two ways.
+		//
+		// Previously every failure was written is_sent=1 -- identical to a
+		// delivered recipient -- with a comment explaining it was done to stop
+		// the task getting stuck. That bought liveness at the cost of silently
+		// discarding mail: the row could never be selected again, and nothing
+		// recorded that it had failed or why. A brief SES blip during a large
+		// campaign dropped every recipient in flight while the task reported
+		// 100% complete.
+		//
+		// Transient failures now go back to is_sent=0 with sent_time pushed
+		// into the future, which is the same deferral mechanism warmup already
+		// uses -- getNextRecipientBatch selects on is_sent=0 AND sent_time <=
+		// now, so the row is simply picked up on a later pass. Permanent
+		// failures, and transients that have exhausted their attempts, still go
+		// terminal at is_sent=1 so the task can finish, but are now flagged
+		// send_failed=1 with the reason recorded.
+		//
+		// is_sent keeps its exact meaning, so every existing query that counts
+		// is_sent=1 for progress or completion returns what it always did.
+		// Grouped rather than per-row. Failures are rare in normal operation, but
+		// during an outage every recipient in the batch fails at once -- and
+		// they nearly always share the same attempt count and the same error, so
+		// grouping collapses what would be one UPDATE per recipient into
+		// typically a single statement. That keeps the failure path from adding
+		// database load exactly when the system is already struggling.
+		if len(retryFailures) > 0 {
 			now := time.Now().Unix()
-			// 失败的也更新 is_sent 和 sent_time 避免卡住发送状态
-			_, err := g.DB().Model("recipient_info").
-				WhereIn("id", failedIDs).
-				Data(g.Map{
-					"is_sent":   1,
-					"sent_time": now,
-				}).
-				Update()
-
-			if err != nil {
-				g.Log().Error(ctx, "batch update failed recipients status failed: %v", err)
-			} else {
-				g.Log().Debug(ctx, "marked %d failed recipients as sent", len(failedIDs))
+			for key, ids := range groupFailures(retryFailures) {
+				_, err := g.DB().Model("recipient_info").
+					WhereIn("id", ids).
+					Data(g.Map{
+						"is_sent":       0,
+						"sent_time":     now + retryBackoffSeconds(key.attempt),
+						"attempt_count": key.attempt + 1,
+						"last_error":    key.errText,
+					}).
+					Update()
+				if err != nil {
+					g.Log().Error(ctx, "failed to requeue recipients for retry: %v", err)
+				}
 			}
+			g.Log().Infof(ctx, "requeued %d recipient(s) after a transient failure", len(retryFailures))
+			retryFailures = retryFailures[:0]
+		}
 
-			failedIDs = failedIDs[:0]
+		if len(terminalFailures) > 0 {
+			now := time.Now().Unix()
+			for key, ids := range groupFailures(terminalFailures) {
+				_, err := g.DB().Model("recipient_info").
+					WhereIn("id", ids).
+					Data(g.Map{
+						"is_sent":       1,
+						"sent_time":     now,
+						"send_failed":   1,
+						"attempt_count": key.attempt + 1,
+						"last_error":    key.errText,
+					}).
+					Update()
+				if err != nil {
+					g.Log().Error(ctx, "failed to record terminal failures: %v", err)
+				}
+			}
+			g.Log().Warningf(ctx, "%d recipient(s) permanently failed and will not be retried", len(terminalFailures))
+			terminalFailures = terminalFailures[:0]
 		}
 	}
 
@@ -1051,15 +1144,18 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 			if result.Success {
 				successResults = append(successResults, result)
+			} else if result.Retryable && result.AttemptCount+1 < maxSendAttempts {
+				retryFailures = append(retryFailures, result)
+				g.Log().Debugf(ctx, "send to recipient %d failed (attempt %d/%d, will retry): %v",
+					result.RecipientID, result.AttemptCount+1, maxSendAttempts, result.Error)
 			} else {
-				failedIDs = append(failedIDs, result.RecipientID)
-
-				g.Log().Debugf(ctx, "send email to recipient %d failed: %v",
-					result.RecipientID, result.Error)
+				terminalFailures = append(terminalFailures, result)
+				g.Log().Debugf(ctx, "send to recipient %d failed permanently after %d attempt(s): %v",
+					result.RecipientID, result.AttemptCount+1, result.Error)
 			}
 
 			// reach batch processing size, flush
-			if len(successResults)+len(failedIDs) >= batchSize {
+			if len(successResults)+len(retryFailures)+len(terminalFailures) >= batchSize {
 				flushUpdates()
 			}
 
@@ -1226,10 +1322,15 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 	// check if context is canceled
 	select {
 	case <-ctx.Done():
+		// The campaign was paused or stopped before this recipient was ever
+		// attempted. Marking them terminal here discarded their mail outright,
+		// so requeue instead -- nothing about the recipient failed.
 		return &SendResult{
-			RecipientID: recipient.Id,
-			Success:     false,
-			Error:       ctx.Err(),
+			RecipientID:  recipient.Id,
+			Success:      false,
+			Error:        ctx.Err(),
+			Retryable:    true,
+			AttemptCount: recipient.AttemptCount,
 		}
 	default:
 		// continue execution
@@ -1342,9 +1443,11 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		e.recordSESFailureStats(ctx, task, recipient, accountName, messageID, len(content), result.Error)
 
 		return &SendResult{
-			RecipientID: recipient.Id,
-			Success:     false,
-			Error:       result.Error,
+			RecipientID:  recipient.Id,
+			Success:      false,
+			Error:        result.Error,
+			Retryable:    ses_api.IsRetryable(result.Error),
+			AttemptCount: recipient.AttemptCount,
 		}
 	}
 
@@ -1412,10 +1515,15 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 	sender, err := mail_service.NewEmailSenderWithLocal(task.Addresser)
 	if err != nil {
 		g.Log().Error(ctx, "create email sender failed: %v", err)
+		// Could be a missing mailbox (permanent) or a transient database or
+		// connection problem. Retry rather than discard -- the attempt cap
+		// bounds the cost of guessing wrong, whereas discarding loses the mail.
 		return &SendResult{
-			RecipientID: recipient.Id,
-			Success:     false,
-			Error:       fmt.Errorf("create email sender failed: %w", err),
+			RecipientID:  recipient.Id,
+			Success:      false,
+			Error:        fmt.Errorf("create email sender failed: %w", err),
+			Retryable:    true,
+			AttemptCount: recipient.AttemptCount,
 		}
 	}
 	defer sender.Close()
@@ -1439,10 +1547,14 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 	err = sender.Send(message, []string{recipient.Recipient})
 	if err != nil {
 		g.Log().Error(ctx, "send email to %s failed: %v", recipient.Recipient, err)
+		// SMTP delivery problems are usually connection-level and clear on
+		// their own, so this is worth another attempt.
 		return &SendResult{
-			RecipientID: recipient.Id,
-			Success:     false,
-			Error:       fmt.Errorf("send email failed: %w", err),
+			RecipientID:  recipient.Id,
+			Success:      false,
+			Error:        fmt.Errorf("send email failed: %w", err),
+			Retryable:    true,
+			AttemptCount: recipient.AttemptCount,
 		}
 	}
 
@@ -1452,6 +1564,68 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 		Success:     true,
 		Error:       nil,
 	}
+}
+
+// maxSendAttempts caps how many times a single recipient is tried before being
+// written off.
+//
+// Deliberately small. The point is to survive a blip -- a throttle, a dropped
+// connection, a brief service problem -- not to keep hammering a provider that
+// is genuinely refusing. Permanent failures are never retried at all, so this
+// budget only ever applies to errors that could plausibly clear.
+const maxSendAttempts = 3
+
+// retryBackoffSeconds returns how long to wait before retrying a recipient
+// that has already failed attemptCount times.
+//
+// Exponential with a floor and a ceiling: 60s, then 300s, then 900s. The floor
+// matters because the scheduler re-picks a task every 5 seconds, so without it
+// a retry would fire almost immediately and simply fail again against whatever
+// is still broken.
+func retryBackoffSeconds(attemptCount int) int64 {
+	switch {
+	case attemptCount <= 0:
+		return 60
+	case attemptCount == 1:
+		return 300
+	default:
+		return 900
+	}
+}
+
+// failureGroup identifies a set of failures that can share one UPDATE: same
+// attempt count, so the same backoff and the same next attempt number, and the
+// same message, so the same last_error.
+type failureGroup struct {
+	attempt int
+	errText string
+}
+
+// groupFailures buckets results so the flush can issue one statement per
+// distinct outcome instead of one per recipient. During an outage every failure
+// in a batch usually carries the same error and the same attempt count, so this
+// normally collapses to a single group.
+func groupFailures(results []*SendResult) map[failureGroup][]interface{} {
+	groups := make(map[failureGroup][]interface{})
+	for _, r := range results {
+		key := failureGroup{attempt: r.AttemptCount, errText: truncateError(r.Error)}
+		groups[key] = append(groups[key], r.RecipientID)
+	}
+	return groups
+}
+
+// truncateError renders an error for storage in recipient_info.last_error,
+// bounded so a verbose AWS error cannot bloat the row.
+func truncateError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	const maxLen = 500
+	if len(msg) > maxLen {
+		return msg[:maxLen]
+	}
+	return msg
 }
 
 // recordSESFailureStats files a failed SES send in the mailstat tables so it

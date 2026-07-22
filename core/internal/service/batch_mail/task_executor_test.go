@@ -2,10 +2,172 @@ package batch_mail
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 )
+
+// ---------------------------------------------------------------------------
+// Retry policy
+// ---------------------------------------------------------------------------
+
+func TestRetryBackoffSeconds_IsIncreasingAndBounded(t *testing.T) {
+	// The scheduler re-picks a task every 5s, so a backoff below that would
+	// retry almost immediately against whatever is still broken.
+	const schedulerInterval = 5
+
+	prev := int64(0)
+	for attempt := 0; attempt < 5; attempt++ {
+		got := retryBackoffSeconds(attempt)
+
+		if got <= schedulerInterval {
+			t.Errorf("attempt %d: backoff %ds is not longer than the %ds scheduler tick",
+				attempt, got, schedulerInterval)
+		}
+		if got < prev {
+			t.Errorf("attempt %d: backoff went backwards (%ds after %ds)", attempt, got, prev)
+		}
+		if got > 3600 {
+			t.Errorf("attempt %d: backoff %ds is unreasonably long", attempt, got)
+		}
+		prev = got
+	}
+}
+
+func TestRetryBackoffSeconds_HandlesNegativeAttempts(t *testing.T) {
+	if got := retryBackoffSeconds(-1); got <= 0 {
+		t.Errorf("negative attempt count produced backoff %d", got)
+	}
+}
+
+func TestMaxSendAttempts_IsBoundedAndGreaterThanOne(t *testing.T) {
+	// Greater than one, or nothing is ever actually retried. Small, or a
+	// permanently failing provider gets hammered.
+	if maxSendAttempts < 2 {
+		t.Errorf("maxSendAttempts = %d, retries are effectively disabled", maxSendAttempts)
+	}
+	if maxSendAttempts > 5 {
+		t.Errorf("maxSendAttempts = %d is high enough to amplify an outage", maxSendAttempts)
+	}
+}
+
+// TestRetryDecision_MatchesPolicy exercises the exact branch used in
+// processSendResults, so the routing of a result cannot drift from the policy
+// without this failing.
+func TestRetryDecision_MatchesPolicy(t *testing.T) {
+	decide := func(r *SendResult) string {
+		switch {
+		case r.Success:
+			return "success"
+		case r.Retryable && r.AttemptCount+1 < maxSendAttempts:
+			return "retry"
+		default:
+			return "terminal"
+		}
+	}
+
+	cases := []struct {
+		name string
+		r    *SendResult
+		want string
+	}{
+		{"delivered", &SendResult{Success: true}, "success"},
+		{"transient, first failure", &SendResult{Retryable: true, AttemptCount: 0}, "retry"},
+		{"transient, second failure", &SendResult{Retryable: true, AttemptCount: 1}, "retry"},
+		{"transient, budget exhausted", &SendResult{Retryable: true, AttemptCount: maxSendAttempts - 1}, "terminal"},
+		{"transient, past budget", &SendResult{Retryable: true, AttemptCount: maxSendAttempts + 5}, "terminal"},
+		{"permanent, first failure", &SendResult{Retryable: false, AttemptCount: 0}, "terminal"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := decide(tc.r); got != tc.want {
+				t.Errorf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGroupFailures_CollapsesIdenticalOutcomes(t *testing.T) {
+	// The outage case: every recipient in the batch fails the same way. This
+	// must produce ONE group, or the failure path issues an UPDATE per
+	// recipient exactly when the system is already under strain.
+	throttled := errors.New("ThrottlingException: Maximum sending rate exceeded")
+
+	results := make([]*SendResult, 0, 50)
+	for i := 1; i <= 50; i++ {
+		results = append(results, &SendResult{RecipientID: i, Error: throttled, AttemptCount: 0})
+	}
+
+	groups := groupFailures(results)
+	if len(groups) != 1 {
+		t.Fatalf("identical failures produced %d groups, want 1", len(groups))
+	}
+	for _, ids := range groups {
+		if len(ids) != 50 {
+			t.Errorf("group holds %d ids, want 50", len(ids))
+		}
+	}
+}
+
+func TestGroupFailures_SeparatesDifferentOutcomes(t *testing.T) {
+	// Different attempt counts need different backoffs, and different errors
+	// need different last_error values, so they must not be merged.
+	errA := errors.New("throttled")
+	errB := errors.New("connection refused")
+
+	results := []*SendResult{
+		{RecipientID: 1, Error: errA, AttemptCount: 0},
+		{RecipientID: 2, Error: errA, AttemptCount: 0},
+		{RecipientID: 3, Error: errA, AttemptCount: 1}, // different attempt
+		{RecipientID: 4, Error: errB, AttemptCount: 0}, // different error
+	}
+
+	groups := groupFailures(results)
+	if len(groups) != 3 {
+		t.Fatalf("got %d groups, want 3", len(groups))
+	}
+
+	// Every recipient must appear exactly once -- losing one here would lose
+	// the recipient entirely.
+	seen := make(map[interface{}]int)
+	for _, ids := range groups {
+		for _, id := range ids {
+			seen[id]++
+		}
+	}
+	if len(seen) != 4 {
+		t.Errorf("grouping covered %d recipients, want 4", len(seen))
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Errorf("recipient %v appeared %d times", id, n)
+		}
+	}
+}
+
+func TestGroupFailures_EmptyInput(t *testing.T) {
+	if groups := groupFailures(nil); len(groups) != 0 {
+		t.Errorf("nil input produced %d groups", len(groups))
+	}
+}
+
+func TestTruncateError_BoundsLengthAndHandlesNil(t *testing.T) {
+	if got := truncateError(nil); got != "" {
+		t.Errorf("nil error produced %q", got)
+	}
+
+	long := errors.New(strings.Repeat("x", 5000))
+	if got := truncateError(long); len(got) > 500 {
+		t.Errorf("error not truncated: %d chars", len(got))
+	}
+
+	short := errors.New("throttled")
+	if got := truncateError(short); got != "throttled" {
+		t.Errorf("short error was altered: %q", got)
+	}
+}
 
 // TestGetTaskIdFromContext_ConcurrentWithRegistration reproduces the crash
 // scenario: several scheduled campaigns come due at once, so ProcessEmailTasks

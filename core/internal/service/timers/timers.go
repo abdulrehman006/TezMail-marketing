@@ -95,6 +95,11 @@ func Start(ctx context.Context) (err error) {
 	})
 
 	// ========== Mail task processing: one executor per task ==========
+	// Release recipients left claimed (is_sent=2) by a process that died
+	// mid-batch, before the scheduler starts. Must run exactly once and before
+	// the first ProcessEmailTasks tick, or it would race a live batch.
+	batch_mail.RecoverOrphanedRecipients(ctx)
+
 	gtimer.Add(5*time.Second, func() {
 		batch_mail.ProcessEmailTasks(ctx)
 	})
