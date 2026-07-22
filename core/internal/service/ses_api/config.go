@@ -213,6 +213,12 @@ func UpdateAccountStatus(accountName string, status string, message string, veri
 
 	currentConfig.LastChecked = time.Now().Format("2006-01-02 15:04:05")
 
+	// Routing depends on status -- only connected/pending accounts are used --
+	// so a status change has to drop the caches. The DB write paths already do
+	// this; without it here, a file-config account flipped to failed kept
+	// receiving sends for up to the cache TTL.
+	defer InvalidateAccountCache()
+
 	// Save to file atomically
 	path := GetConfigPath()
 	data, err := json.MarshalIndent(currentConfig, "", "  ")

@@ -527,7 +527,17 @@ func (e *TaskExecutor) ResumeTask(taskId int) error {
 }
 
 // getTaskIdFromContext
+//
+// Every other access to taskExecutors is guarded by taskExecutorsMutex; this
+// one iterated it bare. Registering an executor while another goroutine was
+// mid-iteration raised "concurrent map iteration and map write", which is a
+// fatal runtime error -- not a panic, so no recover() catches it and the whole
+// process dies. The window is widest exactly when several scheduled campaigns
+// come due together and are registered in a tight loop.
 func (e *TaskExecutor) getTaskIdFromContext(ctx context.Context) (int, error) {
+	taskExecutorsMutex.RLock()
+	defer taskExecutorsMutex.RUnlock()
+
 	for id, executor := range taskExecutors {
 		if executor == e {
 			return id, nil

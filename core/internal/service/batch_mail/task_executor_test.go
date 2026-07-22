@@ -1,9 +1,59 @@
 package batch_mail
 
 import (
+	"context"
 	"strings"
+	"sync"
 	"testing"
 )
+
+// TestGetTaskIdFromContext_ConcurrentWithRegistration reproduces the crash
+// scenario: several scheduled campaigns come due at once, so ProcessEmailTasks
+// registers executors in a tight loop while already-spawned goroutines are
+// inside ProcessTask -> getTaskIdFromContext iterating the same map.
+//
+// Before the fix this raised "concurrent map iteration and map write", which is
+// a fatal runtime error -- recover() does not catch it, the process dies. Run
+// with -race to make this meaningful.
+func TestGetTaskIdFromContext_ConcurrentWithRegistration(t *testing.T) {
+	ctx := context.Background()
+
+	// Keep the global map clean for other tests.
+	t.Cleanup(func() {
+		taskExecutorsMutex.Lock()
+		taskExecutors = make(map[int]*TaskExecutor)
+		taskExecutorsMutex.Unlock()
+	})
+
+	self := NewTaskExecutor(ctx)
+	RegisterTaskExecutor(1, self)
+
+	var wg sync.WaitGroup
+
+	// Writers: registration and removal, as ProcessEmailTasks and the idle
+	// cleanup timer do.
+	for i := 2; i < 40; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			RegisterTaskExecutor(id, NewTaskExecutor(ctx))
+			RemoveTaskExecutor(id)
+		}(i)
+	}
+
+	// Readers: the lookup that used to iterate unguarded.
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := self.getTaskIdFromContext(ctx); err != nil {
+				t.Errorf("lookup failed for a registered executor: %v", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
 
 // mailstat_message_ids, mailstat_senders and mailstat_send_mails all declare
 // postfix_message_id as TEXT PRIMARY KEY, and the SES stats writers use

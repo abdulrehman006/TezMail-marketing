@@ -5,6 +5,7 @@ import (
 	"billionmail-core/internal/service/batch_mail"
 	"billionmail-core/internal/service/public"
 	"context"
+	"fmt"
 
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
@@ -96,9 +97,19 @@ func (c *ControllerV1) UpdateTaskInfo(ctx context.Context, req *v1.UpdateTaskInf
 		return nil, err
 	}
 
+	// "subject" is only present when the subject actually changed, so an
+	// unchecked type assertion panicked on every other edit -- notably a
+	// reschedule, which sets only start_time. The panic fired *after* the
+	// update had already committed, so the change took effect but the caller
+	// saw a 500.
+	logMsg := fmt.Sprintf("Update Task Info : task #%d successfully", req.TaskId)
+	if subject, ok := updateData["subject"].(string); ok && subject != "" {
+		logMsg = "Update Task Info :" + subject + " successfully"
+	}
+
 	_ = public.WriteLog(ctx, public.LogParams{
 		Type: consts.LOGTYPE.Task,
-		Log:  "Update Task Info :" + updateData["subject"].(string) + " successfully",
+		Log:  logMsg,
 		Data: updateData,
 	})
 
