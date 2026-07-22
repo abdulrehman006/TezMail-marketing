@@ -1303,7 +1303,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		go func() {
 			nowMillis := time.Now().UnixMilli()
 			cleanMessageID := strings.Trim(messageID, "<>")
-			sesPostfixID := "ses-fail-" + fmt.Sprintf("%d", nowMillis)
+			sesPostfixID := sesStatsKey("ses-fail-", "", cleanMessageID)
 
 			// Insert into mailstat_message_ids
 			_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
@@ -1375,7 +1375,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 
 		// Insert into mailstat_message_ids to map message_id
 		// Use SES message ID as postfix_message_id since there's no Postfix involved
-		sesPostfixID := "ses-" + result.MessageID
+		sesPostfixID := sesStatsKey("ses-", result.MessageID, cleanMessageID)
 		_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
 			"postfix_message_id": sesPostfixID,
 			"message_id":         cleanMessageID,
@@ -1469,6 +1469,28 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 		Success:     true,
 		Error:       nil,
 	}
+}
+
+// sesStatsKey builds the synthetic postfix_message_id under which a SES send
+// is filed in the mailstat tables.
+//
+// That column is a TEXT PRIMARY KEY and the inserts use InsertIgnore, so a
+// duplicate key is silently discarded rather than erroring. The failure path
+// previously keyed on millisecond timestamps, so two sends failing in the same
+// millisecond -- routine with a concurrent worker pool -- lost one row and
+// undercounted bounces.
+//
+// localMessageID is the per-message ID from generateMessageID, which carries
+// 32 random characters and is therefore unique per send. It is used as the key
+// on the failure path, and as a fallback on the success path when SES returns
+// an empty MessageId (which would otherwise collapse every send in the
+// campaign onto the single key "ses-").
+func sesStatsKey(prefix, sesMessageID, localMessageID string) string {
+	id := strings.TrimSpace(sesMessageID)
+	if id == "" {
+		id = localMessageID
+	}
+	return prefix + id
 }
 
 // generateMessageID generates a unique Message-ID for email
