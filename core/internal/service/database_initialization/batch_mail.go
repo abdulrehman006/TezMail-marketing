@@ -225,6 +225,11 @@ func init() {
 		// could never be retried. These columns add the outcome and the retry
 		// bookkeeping without changing is_sent's meaning, so every existing
 		// query that counts is_sent=1 keeps returning exactly what it did.
+		// email_tasks had nowhere to record WHY a task stopped -- only `remark`,
+		// which is operator-supplied notes. So a campaign paused automatically
+		// looked identical to one paused by hand.
+		_ = AddColumnIfNotExists("email_tasks", "pause_reason", "TEXT", "''", false)
+
 		_ = AddColumnIfNotExists("recipient_info", "attempt_count", "SMALLINT", "0", true)
 		_ = AddColumnIfNotExists("recipient_info", "send_failed", "SMALLINT", "0", true)
 		_ = AddColumnIfNotExists("recipient_info", "last_error", "TEXT", "''", false)

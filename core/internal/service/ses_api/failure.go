@@ -18,20 +18,58 @@ import (
 type FailureKind int
 
 const (
-	// FailurePermanent means retrying cannot help. The configuration, the
-	// credentials or the message itself has to change first.
+	// FailurePermanent means retrying cannot help for THIS message. Something
+	// about the recipient or the message itself has to change. Other messages
+	// on the same account may still succeed.
 	FailurePermanent FailureKind = iota
 
-	// FailureTransient means the same request could succeed later --
-	// throttling, a network problem, or a service-side error.
+	// FailureTransient means the same request could succeed shortly --
+	// per-second throttling, a network problem, or a service-side error.
 	FailureTransient
+
+	// FailureAccountBlocked means the whole account cannot send right now, so
+	// every remaining message will fail identically. Daily quota exhausted,
+	// credentials rejected, account suspended, sending paused.
+	//
+	// This is the class that must NOT be retried and must NOT be discarded.
+	// Retrying wastes attempts on something that cannot clear for hours;
+	// discarding burns the entire remaining list for a condition an operator
+	// can fix in minutes. The campaign should stop and wait instead.
+	FailureAccountBlocked
 )
 
 func (k FailureKind) String() string {
-	if k == FailureTransient {
+	switch k {
+	case FailureTransient:
 		return "transient"
+	case FailureAccountBlocked:
+		return "account blocked"
+	default:
+		return "permanent"
 	}
-	return "permanent"
+}
+
+// dailyQuotaMarkers identify a TooManyRequestsException that is a 24-hour
+// sending-limit exhaustion rather than per-second throttling.
+//
+// SES reports both through the same exception type, but they need opposite
+// responses: a rate limit clears in seconds and is worth retrying, whereas a
+// daily quota does not clear until the 24-hour window rolls and retrying is
+// pure waste. Only the message text distinguishes them.
+var dailyQuotaMarkers = []string{
+	"Daily message quota exceeded",
+	"Daily sending quota exceeded",
+	"quota exceeded",
+}
+
+func isDailyQuotaExhausted(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, marker := range dailyQuotaMarkers {
+		if strings.Contains(lower, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
 }
 
 // ClassifyFailure decides whether a SES send failure is worth retrying.
@@ -51,35 +89,49 @@ func ClassifyFailure(err error) FailureKind {
 		return FailurePermanent
 	}
 
-	// --- Definitely not worth retrying: configuration or content is wrong ---
+	// --- Account-level: nothing on this account can send until it is fixed ---
 
 	var accountSuspended *types.AccountSuspendedException
 	var sendingPaused *types.SendingPausedException
+
+	switch {
+	case errors.As(err, &accountSuspended), errors.As(err, &sendingPaused):
+		return FailureAccountBlocked
+	}
+
+	// Throttling splits two ways on the message text. A per-second rate limit
+	// clears in seconds; a 24-hour quota does not clear until the window rolls,
+	// and every remaining message in the campaign will hit it identically.
+	var tooManyRequests *types.TooManyRequestsException
+	var limitExceeded *types.LimitExceededException
+
+	if errors.As(err, &tooManyRequests) || errors.As(err, &limitExceeded) {
+		if isDailyQuotaExhausted(err.Error()) {
+			return FailureAccountBlocked
+		}
+		return FailureTransient
+	}
+
+	// --- Message-level: this message is wrong, others may be fine ---
+
 	var mailFromNotVerified *types.MailFromDomainNotVerifiedException
 	var badRequest *types.BadRequestException
 	var notFound *types.NotFoundException
 
 	switch {
-	case errors.As(err, &accountSuspended),
-		errors.As(err, &sendingPaused),
-		errors.As(err, &mailFromNotVerified),
+	case errors.As(err, &mailFromNotVerified),
 		errors.As(err, &badRequest),
 		errors.As(err, &notFound):
 		return FailurePermanent
 	}
 
-	// --- Worth retrying: throttling, contention, service-side failure ---
+	// --- Worth retrying: contention, service-side failure ---
 
-	var tooManyRequests *types.TooManyRequestsException
-	var limitExceeded *types.LimitExceededException
 	var internalError *types.InternalServiceErrorException
 	var concurrentMod *types.ConcurrentModificationException
 
 	switch {
-	case errors.As(err, &tooManyRequests),
-		errors.As(err, &limitExceeded),
-		errors.As(err, &internalError),
-		errors.As(err, &concurrentMod):
+	case errors.As(err, &internalError), errors.As(err, &concurrentMod):
 		return FailureTransient
 	}
 
@@ -101,38 +153,53 @@ func ClassifyFailure(err error) FailureKind {
 		return FailurePermanent
 	}
 
-	// Credential and authorisation problems. These are permanent in the sense
-	// that retrying this message will not help -- an operator has to fix the
-	// account -- so there is no point burning quota on them.
+	// Credential and authorisation problems block the whole account: if the
+	// key is rejected for one message it is rejected for all of them, so
+	// continuing through the list only produces thousands of identical errors.
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		switch apiErr.ErrorCode() {
 		case "InvalidClientTokenId", "SignatureDoesNotMatch", "UnrecognizedClientException",
 			"InvalidSignatureException", "AccessDenied", "AccessDeniedException",
 			"ExpiredTokenException", "MissingAuthenticationToken":
-			return FailurePermanent
-		case "ThrottlingException", "Throttling", "RequestThrottled",
-			"RequestTimeout", "RequestTimeoutException", "ServiceUnavailable",
+			return FailureAccountBlocked
+		case "ThrottlingException", "Throttling", "RequestThrottled":
+			if isDailyQuotaExhausted(err.Error()) {
+				return FailureAccountBlocked
+			}
+			return FailureTransient
+		case "RequestTimeout", "RequestTimeoutException", "ServiceUnavailable",
 			"InternalFailure", "InternalError", "ServiceFailure":
 			return FailureTransient
 		}
 	}
 
-	// Last resort. Kept narrow and anchored on codes that only appear in
-	// authentication failures, so a message merely mentioning one of these
-	// words is unlikely to be misfiled.
+	// Last resort, for errors that arrive as opaque strings rather than typed
+	// exceptions. Kept narrow and anchored on codes that appear only in the
+	// condition being matched.
 	msg := err.Error()
-	for _, permanent := range []string{
+
+	if isDailyQuotaExhausted(msg) {
+		return FailureAccountBlocked
+	}
+
+	for _, blocked := range []string{
 		"InvalidClientTokenId",
 		"SignatureDoesNotMatch",
 		"UnrecognizedClientException",
 		"ExpiredToken",
-		"Email address is not verified",
 		"not authorized to perform",
+		"Account is paused",
+		"account is suspended",
 	} {
-		if strings.Contains(msg, permanent) {
-			return FailurePermanent
+		if strings.Contains(msg, blocked) {
+			return FailureAccountBlocked
 		}
+	}
+
+	// Message-level: wrong for this recipient, fine for others.
+	if strings.Contains(msg, "Email address is not verified") {
+		return FailurePermanent
 	}
 
 	// Unknown: prefer retrying over silently losing the recipient.
@@ -140,6 +207,15 @@ func ClassifyFailure(err error) FailureKind {
 }
 
 // IsRetryable is a convenience wrapper for callers that only need the boolean.
+//
+// Account-blocked failures are deliberately NOT retryable: the campaign should
+// stop rather than work through the list producing identical errors.
 func IsRetryable(err error) bool {
 	return ClassifyFailure(err) == FailureTransient
+}
+
+// IsAccountBlocked reports whether the failure means the whole SES account
+// cannot send, so the campaign should pause rather than continue.
+func IsAccountBlocked(err error) bool {
+	return ClassifyFailure(err) == FailureAccountBlocked
 }

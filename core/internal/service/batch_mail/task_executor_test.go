@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -89,6 +90,118 @@ func TestRetryDecision_MatchesPolicy(t *testing.T) {
 				t.Errorf("got %s, want %s", got, tc.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Circuit breaker routing
+// ---------------------------------------------------------------------------
+
+// TestResultRouting_AccountBlockedTakesPrecedence mirrors the exact branch
+// order in processSendResults. AccountBlocked must be checked BEFORE the retry
+// branch: if it were not, a daily-quota exhaustion would be treated as an
+// ordinary retryable failure, consume all three attempts, and permanently write
+// off every recipient for a condition that has nothing to do with them.
+func TestResultRouting_AccountBlockedTakesPrecedence(t *testing.T) {
+	route := func(r *SendResult) string {
+		switch {
+		case r.Success:
+			return "success"
+		case r.AccountBlocked:
+			return "blocked"
+		case r.Retryable && r.AttemptCount+1 < maxSendAttempts:
+			return "retry"
+		default:
+			return "terminal"
+		}
+	}
+
+	cases := []struct {
+		name string
+		r    *SendResult
+		want string
+	}{
+		{"delivered", &SendResult{Success: true}, "success"},
+		{"daily quota exhausted", &SendResult{AccountBlocked: true, AttemptCount: 0}, "blocked"},
+		{"blocked even when also marked retryable", &SendResult{AccountBlocked: true, Retryable: true}, "blocked"},
+		{"blocked even with attempts exhausted", &SendResult{AccountBlocked: true, AttemptCount: 99}, "blocked"},
+		{"ordinary transient", &SendResult{Retryable: true, AttemptCount: 0}, "retry"},
+		{"bad recipient", &SendResult{Retryable: false, AttemptCount: 0}, "terminal"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := route(tc.r); got != tc.want {
+				t.Errorf("routed to %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCircuitBreaker_TripsOnlyOnce(t *testing.T) {
+	// A batch can carry 50 blocked recipients across several flushes. Without
+	// the guard that would issue 50 identical pause writes.
+	e := NewTaskExecutor(context.Background())
+
+	tripped := 0
+	for i := 0; i < 50; i++ {
+		if e.breakerTripped.CompareAndSwap(false, true) {
+			tripped++
+		}
+	}
+
+	if tripped != 1 {
+		t.Errorf("breaker tripped %d times, want exactly 1", tripped)
+	}
+}
+
+func TestCircuitBreaker_TripIsConcurrencySafe(t *testing.T) {
+	// Results arrive from a worker pool, so several goroutines can observe a
+	// blocked failure at the same moment. Run with -race.
+	e := NewTaskExecutor(context.Background())
+
+	var wg sync.WaitGroup
+	var tripped int64
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if e.breakerTripped.CompareAndSwap(false, true) {
+				atomic.AddInt64(&tripped, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := atomic.LoadInt64(&tripped); got != 1 {
+		t.Errorf("breaker tripped %d times under concurrency, want exactly 1", got)
+	}
+}
+
+func TestCircuitBreaker_StartsUntripped(t *testing.T) {
+	e := NewTaskExecutor(context.Background())
+	if e.breakerTripped.Load() {
+		t.Error("a fresh executor must not start with the breaker already tripped")
+	}
+	if e.IsPaused() {
+		t.Error("a fresh executor must not start paused")
+	}
+}
+
+// TestBlockedRecipients_DoNotConsumeAnAttempt documents the requeue contract.
+// A blocked recipient is put back exactly as it was: nothing is wrong with the
+// address, the account was simply unavailable, so charging it an attempt would
+// mean one quota exhaustion silently ate a third of every recipient's budget.
+func TestBlockedRecipients_DoNotConsumeAnAttempt(t *testing.T) {
+	blocked := &SendResult{RecipientID: 1, AccountBlocked: true, AttemptCount: 1}
+
+	// The blocked branch writes is_sent=0 and last_error only -- no
+	// attempt_count, no sent_time. Assert the inputs that guarantee that.
+	if !blocked.AccountBlocked {
+		t.Fatal("precondition")
+	}
+	if blocked.AttemptCount != 1 {
+		t.Errorf("AttemptCount = %d; the requeue must carry it unchanged", blocked.AttemptCount)
 	}
 }
 

@@ -579,6 +579,34 @@ func GetTaskInfo(ctx context.Context, taskId int) (*entity.EmailTask, error) {
 }
 
 // UpdateTaskPauseStatus update task pause status
+// PauseTaskWithReason stops a task and records why, so an automatic pause can
+// be told apart from one an operator triggered.
+//
+// Used when continuing would be pointless or harmful: the SES account cannot
+// send at all, or the daily quota is exhausted. Pausing rather than failing is
+// the important part -- recipients that have not been attempted stay at
+// is_sent=0, fully intact, and the campaign resumes from exactly where it
+// stopped once the underlying problem is fixed. Marking them failed instead
+// would burn the remaining list for a condition that is usually resolved in
+// minutes.
+func PauseTaskWithReason(ctx context.Context, taskId int, reason string) error {
+	_, err := g.DB().Model("email_tasks").
+		Where("id", taskId).
+		Data(g.Map{
+			"pause":        1,
+			"task_process": 3,
+			"pause_reason": reason,
+		}).
+		Update()
+
+	if err != nil {
+		return fmt.Errorf("failed to pause task %d: %w", taskId, err)
+	}
+
+	g.Log().Warningf(ctx, "task %d paused automatically: %s", taskId, reason)
+	return nil
+}
+
 func UpdateTaskPauseStatus(ctx context.Context, taskId int, isPaused bool) error {
 	pauseValue := 0
 	processValue := 1
@@ -588,12 +616,19 @@ func UpdateTaskPauseStatus(ctx context.Context, taskId int, isPaused bool) error
 		processValue = 3
 	}
 
+	data := g.Map{
+		"pause":        pauseValue,
+		"task_process": processValue,
+	}
+	// Resuming clears any automatic-pause reason, so a stale explanation does
+	// not linger next to a task that is running again.
+	if !isPaused {
+		data["pause_reason"] = ""
+	}
+
 	_, err := g.DB().Model("email_tasks").
 		Where("id", taskId).
-		Data(g.Map{
-			"pause":        pauseValue,
-			"task_process": processValue,
-		}).
+		Data(data).
 		Update()
 
 	if err != nil {

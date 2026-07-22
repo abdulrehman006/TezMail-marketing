@@ -181,6 +181,10 @@ type TaskExecutor struct {
 	isPaused     atomic.Bool
 	lastActivity time.Time
 
+	// breakerTripped guards the automatic pause so a batch of blocked
+	// recipients issues one pause, not one per recipient.
+	breakerTripped atomic.Bool
+
 	// task configuration cache
 	taskConfig   *entity.EmailTask
 	configLoaded time.Time
@@ -215,6 +219,12 @@ type SendResult struct {
 	// back in the queue rather than being written off. Only meaningful when
 	// Success is false.
 	Retryable bool
+
+	// AccountBlocked says the whole SES account cannot send -- daily quota
+	// exhausted, credentials rejected, account suspended. Every remaining
+	// message will fail identically, so the campaign should pause rather than
+	// work through the list. The recipient is requeued, not written off.
+	AccountBlocked bool
 
 	// AttemptCount is how many attempts this recipient had already had before
 	// the one that just finished. Used to decide when to stop retrying.
@@ -296,6 +306,16 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 	// set pause status
 	if task.Pause == 1 {
 		e.isPaused.Store(true)
+	}
+
+	// Pre-flight: refuse to start if the SES account cannot cover this campaign.
+	//
+	// Without this, a campaign larger than the remaining daily quota starts
+	// happily, sends until the allowance runs out, and then produces one 429
+	// per remaining recipient. Checking once up front turns thousands of
+	// failures into a single actionable message, before any mail is attempted.
+	if err := e.checkSendQuotaBeforeStart(ctx, taskId, task); err != nil {
+		return err
 	}
 
 	// check campaign warmup association and determine warmup identity
@@ -1038,6 +1058,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 	successResults := make([]*SendResult, 0, batchSize)
 	retryFailures := make([]*SendResult, 0, batchSize)
 	terminalFailures := make([]*SendResult, 0, batchSize)
+	blockedFailures := make([]*SendResult, 0, batchSize)
 
 	// create ticker to flush results
 	ticker := time.NewTicker(flushInterval)
@@ -1045,7 +1066,8 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 	// flush function
 	flushUpdates := func() {
-		if len(successResults) == 0 && len(retryFailures) == 0 && len(terminalFailures) == 0 {
+		if len(successResults) == 0 && len(retryFailures) == 0 &&
+			len(terminalFailures) == 0 && len(blockedFailures) == 0 {
 			return
 		}
 
@@ -1166,6 +1188,34 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 			g.Log().Warningf(ctx, "%d recipient(s) permanently failed and will not be retried", len(terminalFailures))
 			terminalFailures = terminalFailures[:0]
 		}
+
+		// Account-level block: the whole account cannot send, so every
+		// remaining message would fail identically.
+		//
+		// These recipients go straight back to pending WITHOUT consuming an
+		// attempt. Nothing is wrong with them -- the account is unavailable --
+		// so charging them a retry would mean a quota exhaustion silently ate a
+		// third of every recipient's budget. sent_time is left alone so they
+		// are immediately eligible when the campaign resumes.
+		if len(blockedFailures) > 0 {
+			for key, ids := range groupFailures(blockedFailures) {
+				_, err := g.DB().Model("recipient_info").
+					WhereIn("id", ids).
+					Data(g.Map{
+						"is_sent":    0,
+						"last_error": key.errText,
+					}).
+					Update()
+				if err != nil {
+					g.Log().Error(ctx, "failed to requeue recipients after an account-level block: %v", err)
+				}
+			}
+			g.Log().Warningf(ctx, "%d recipient(s) requeued because the SES account is unavailable", len(blockedFailures))
+
+			// Trip the breaker once, using the first failure's reason.
+			e.tripCircuitBreaker(ctx, blockedFailures[0].Error)
+			blockedFailures = blockedFailures[:0]
+		}
 	}
 
 	// main loop
@@ -1180,6 +1230,14 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 			if result.Success {
 				successResults = append(successResults, result)
+			} else if result.AccountBlocked {
+				// Checked before the retry branch: an account-level block must
+				// never be treated as an ordinary retryable failure, or it
+				// would consume attempts and eventually write recipients off
+				// for a condition that has nothing to do with them.
+				blockedFailures = append(blockedFailures, result)
+				g.Log().Warningf(ctx, "send to recipient %d blocked at account level: %v",
+					result.RecipientID, result.Error)
 			} else if result.Retryable && result.AttemptCount+1 < maxSendAttempts {
 				retryFailures = append(retryFailures, result)
 				g.Log().Debugf(ctx, "send to recipient %d failed (attempt %d/%d, will retry): %v",
@@ -1191,7 +1249,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 			}
 
 			// reach batch processing size, flush
-			if len(successResults)+len(retryFailures)+len(terminalFailures) >= batchSize {
+			if len(successResults)+len(retryFailures)+len(terminalFailures)+len(blockedFailures) >= batchSize {
 				flushUpdates()
 			}
 
@@ -1479,11 +1537,12 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		e.recordSESFailureStats(ctx, task, recipient, accountName, messageID, len(content), result.Error)
 
 		return &SendResult{
-			RecipientID:  recipient.Id,
-			Success:      false,
-			Error:        result.Error,
-			Retryable:    ses_api.IsRetryable(result.Error),
-			AttemptCount: recipient.AttemptCount,
+			RecipientID:    recipient.Id,
+			Success:        false,
+			Error:          result.Error,
+			Retryable:      ses_api.IsRetryable(result.Error),
+			AccountBlocked: ses_api.IsAccountBlocked(result.Error),
+			AttemptCount:   recipient.AttemptCount,
 		}
 	}
 
@@ -1600,6 +1659,97 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 		Success:     true,
 		Error:       nil,
 	}
+}
+
+// tripCircuitBreaker pauses the task because the SES account cannot send.
+//
+// Without this, an account-level condition -- exhausted daily quota, rejected
+// credentials, suspended account -- would let the campaign walk the entire
+// remaining list producing one identical error per recipient. Pausing turns
+// that into a single stop with a reason an operator can act on, and leaves
+// every unsent recipient intact for when the campaign resumes.
+//
+// Idempotent: the flush loop can see many blocked results across several
+// batches, but only the first trips it. Without the guard, a batch of 50
+// blocked recipients would issue 50 identical pause writes.
+func (e *TaskExecutor) tripCircuitBreaker(ctx context.Context, cause error) {
+	if !e.breakerTripped.CompareAndSwap(false, true) {
+		return
+	}
+
+	taskId, err := e.getTaskIdFromContext(ctx)
+	if err != nil {
+		g.Log().Errorf(ctx, "SES account is blocked but the task id could not be resolved to pause it: %v", err)
+		return
+	}
+
+	reason := "SES account cannot send"
+	if cause != nil {
+		reason = "Campaign paused automatically: the SES account cannot currently send. " +
+			truncateUTF8(cause.Error(), 400)
+	}
+
+	if pauseErr := PauseTaskWithReason(ctx, taskId, reason); pauseErr != nil {
+		g.Log().Errorf(ctx, "task %d: failed to pause after an account-level block: %v", taskId, pauseErr)
+		return
+	}
+
+	// Stop dispatching immediately rather than waiting for the next loop check,
+	// so no further recipients are pulled from the queue.
+	e.isPaused.Store(true)
+}
+
+// checkSendQuotaBeforeStart pauses the task if its SES account does not have
+// enough daily quota left to cover the recipients still waiting.
+//
+// Returns a non-nil error only when the task must not proceed. The task is
+// paused rather than failed, so every unsent recipient stays at is_sent=0 and
+// the campaign resumes untouched once the 24-hour window rolls or the limit is
+// raised.
+//
+// Fails OPEN in two cases, both deliberate:
+//   - the domain has no SES account, so there is no quota to check and the send
+//     goes via SMTP anyway
+//   - the quota lookup itself failed, e.g. AWS unreachable. Refusing to send
+//     because we could not ask about the quota would turn a monitoring blip
+//     into an outage, and the send path still handles a real rejection.
+func (e *TaskExecutor) checkSendQuotaBeforeStart(ctx context.Context, taskId int, task *entity.EmailTask) error {
+	pending, err := g.DB().Model("recipient_info").
+		Where("task_id", taskId).
+		Where("is_sent", 0).
+		Count()
+	if err != nil {
+		g.Log().Warningf(ctx, "task %d: could not count pending recipients for the quota check: %v", taskId, err)
+		return nil
+	}
+	if pending == 0 {
+		return nil
+	}
+
+	quota, err := ses_api.CheckSendQuota(ctx, task.Addresser)
+	if err != nil {
+		g.Log().Warningf(ctx, "task %d: SES quota check failed, proceeding anyway: %v", taskId, err)
+		return nil
+	}
+	if quota == nil {
+		// No SES account for this domain -- nothing to gate on.
+		return nil
+	}
+
+	if quota.Remaining() >= float64(pending) {
+		g.Log().Infof(ctx, "task %d: SES quota check passed - %d pending, %.0f remaining in the 24h window",
+			taskId, pending, quota.Remaining())
+		return nil
+	}
+
+	reason := ses_api.DescribeQuotaShortfall(quota, pending)
+	if pauseErr := PauseTaskWithReason(ctx, taskId, reason); pauseErr != nil {
+		g.Log().Errorf(ctx, "task %d: quota is insufficient but pausing failed: %v", taskId, pauseErr)
+		return pauseErr
+	}
+	e.isPaused.Store(true)
+
+	return fmt.Errorf("task %d not started: %s", taskId, reason)
 }
 
 // safeGo runs fn in a goroutine that cannot take the process down with it.
