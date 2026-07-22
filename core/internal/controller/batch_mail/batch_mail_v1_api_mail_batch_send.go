@@ -81,6 +81,19 @@ func (c *ControllerV1) ApiMailBatchSend(ctx context.Context, req *v1.ApiMailBatc
 		addresser = apiTemplate.Addresser
 	}
 
+	// The addresser is the same for every recipient, so validate it once and up
+	// front. This used to be checked implicitly, per recipient, by building an
+	// authenticated SMTP sender inside the loop -- which required a local
+	// mailbox, so a domain configured purely for SES failed. Worse, the failure
+	// was a bare `continue`: the recipient was silently dropped with no error,
+	// no log and no queued row, and the caller still received success.
+	if !canSendAs(addresser) {
+		res.Code = 1006
+		res.SetError(gerror.New(public.LangCtx(ctx,
+			"Sender {} cannot send: no SES account is mapped to its domain and it has no active local mailbox", addresser)))
+		return res, nil
+	}
+
 	batchData := make([]g.Map, 0, len(validRecipients))
 	now := int(time.Now().Unix())
 	for _, recipient := range validRecipients {
@@ -100,14 +113,10 @@ func (c *ControllerV1) ApiMailBatchSend(ctx context.Context, req *v1.ApiMailBatc
 				continue
 			}
 		}
-		// 生成messageId
-		sender, err := mail_service.NewEmailSenderWithLocal(addresser)
-		if err != nil {
-			continue
-		}
-		messageId := sender.GenerateMessageID()
-		sender.Close()
-		messageId = strings.Trim(messageId, "<>")
+		// Message-ID only. This previously opened, authenticated and closed an
+		// SMTP connection to Postfix for every single recipient, despite the
+		// addresser being identical across the whole batch.
+		messageId := strings.Trim(mail_service.NewMessageID(addresser), "<>")
 		batchData = append(batchData, g.Map{
 			"api_id":        apiTemplate.Id,
 			"recipient":     recipient,

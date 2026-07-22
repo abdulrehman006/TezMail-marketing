@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/contact"
 	"billionmail-core/internal/service/mail_service"
 	"billionmail-core/internal/service/public"
+	"billionmail-core/internal/service/ses_api"
 	"context"
 	"database/sql"
 	"errors"
@@ -101,21 +102,36 @@ func (c *ControllerV1) ApiMailSend(ctx context.Context, req *v1.ApiMailSendReq) 
 }
 
 // 记录到日志表，状态为待发送
-func recordApiMailLog(ctx context.Context, apiTemplate *entity.ApiTemplates, recipient, addresser string, attribs map[string]string) error {
-	// 生成消息ID
-
-	sender, err := mail_service.NewEmailSenderWithLocal(addresser)
-	if err != nil {
-		return gerror.New(public.LangCtx(ctx, "Failed to create email sender: {}", err))
+// canSendAs reports whether mail can actually leave the system as this sender,
+// by either route.
+//
+// This used to be checked accidentally: the queueing code built a full
+// authenticated SMTP sender purely to generate a Message-ID, and that failed if
+// no local mailbox existed. It was the only validation of the addresser, but it
+// only ever asked about the Postfix route -- so a domain configured purely for
+// SES was rejected despite being perfectly able to send.
+//
+// Now the question is asked directly, and of both routes.
+func canSendAs(addresser string) bool {
+	if ses_api.GetAccountForDomain(addresser) != nil {
+		return true
 	}
-	defer sender.Close()
+	return mail_service.IsSMTPAvailable(addresser)
+}
 
-	messageId := sender.GenerateMessageID()
-	messageId = strings.Trim(messageId, "<>")
+func recordApiMailLog(ctx context.Context, apiTemplate *entity.ApiTemplates, recipient, addresser string, attribs map[string]string) error {
+	if !canSendAs(addresser) {
+		return gerror.New(public.LangCtx(ctx,
+			"Sender {} cannot send: no SES account is mapped to its domain and it has no active local mailbox", addresser))
+	}
+
+	// Message-ID only -- no SMTP connection needed. Building a sender here
+	// required a local mailbox and blocked SES-only domains entirely.
+	messageId := strings.Trim(mail_service.NewMessageID(addresser), "<>")
 
 	// 直接记录到日志表，状态为待发送
 	now := int(time.Now().Unix())
-	_, err = g.DB().Model("api_mail_logs").Insert(g.Map{
+	_, err := g.DB().Model("api_mail_logs").Insert(g.Map{
 		"api_id":        apiTemplate.Id,
 		"recipient":     recipient,
 		"message_id":    messageId, // 发送时需要加<>
