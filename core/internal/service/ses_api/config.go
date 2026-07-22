@@ -226,58 +226,83 @@ func UpdateAccountStatus(accountName string, status string, message string, veri
 // GetAccountForDomain returns the account configuration for a given sender domain
 // It first checks the database, then falls back to file config
 func GetAccountForDomain(senderEmail string) *AccountConfig {
-	// First, try to get from database
 	ctx := context.Background()
-	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomain called for: %s", senderEmail)
+
+	// This runs at least twice per recipient (sendEmail, then GetSenderForEmail),
+	// so it is cached. Negative results are cached too -- a Postfix-only domain
+	// is the common case and would otherwise query on every single message.
+	domain := extractDomain(senderEmail)
+	if domain != "" {
+		if cached, found := lookupAccountCache(domain); found {
+			return cached
+		}
+	}
+
+	// First, try to get from database
 	dbAccount, err := GetAccountForDomainFromDB(ctx, senderEmail)
 	if err != nil {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB error: %v", err)
+		// Do not cache on error: a transient database problem must not pin this
+		// domain to "no SES" for the whole TTL.
+		sesErrorf(ctx, "account lookup failed for %q: %v", senderEmail, err)
+		return nil
 	}
 	if dbAccount != nil {
-		g.Log().Warningf(ctx, "[SES-DEBUG] Found DB account: name=%s, region=%s, status=%s, hasAccessKey=%v, hasSecretKey=%v",
-			dbAccount.Name, dbAccount.Region, dbAccount.Status, dbAccount.AccessKey != "", dbAccount.SecretKey != "")
+		sesTracef(ctx, "using SES account %q (region %s, status %s) for %s",
+			dbAccount.Name, dbAccount.Region, dbAccount.Status, senderEmail)
+		if domain != "" {
+			storeAccountCache(domain, dbAccount)
+		}
 		return dbAccount
 	}
-	g.Log().Warning(ctx, "[SES-DEBUG] No DB account found, falling back to file config")
+	sesTracef(ctx, "no DB account for %s, checking file config", senderEmail)
 
-	// Fall back to file config
+	// Fall back to file config.
+	// Resolved through a single exit so every outcome -- including "no account",
+	// which is the common case -- gets cached exactly once.
+	account := lookupFileConfigAccount(ctx, domain)
+	if domain != "" {
+		storeAccountCache(domain, account)
+	}
+	return account
+}
+
+// lookupFileConfigAccount resolves a domain against the legacy JSON file
+// config. Returns nil when the file config is absent, disabled, or has no
+// usable account for the domain.
+func lookupFileConfigAccount(ctx context.Context, domain string) *AccountConfig {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 
 	if currentConfig == nil || !currentConfig.Enabled {
-		g.Log().Warningf(ctx, "[SES-DEBUG] File config: currentConfig=%v, enabled=%v", currentConfig != nil, currentConfig != nil && currentConfig.Enabled)
+		sesTracef(ctx, "file config unavailable (present=%v, enabled=%v)",
+			currentConfig != nil, currentConfig != nil && currentConfig.Enabled)
 		return nil
 	}
-
-	// Extract domain from email
-	domain := extractDomain(senderEmail)
 	if domain == "" {
 		return nil
 	}
 
-	// Look up in domain mapping
+	// Try exact match first, then the wildcard.
 	accountName := ""
-
-	// Try exact match first
 	if name, ok := currentConfig.DomainMapping[domain]; ok {
 		accountName = name
 	} else if name, ok := currentConfig.DomainMapping["*"]; ok {
-		// Fall back to wildcard
 		accountName = name
 	}
-
 	if accountName == "" {
 		return nil
 	}
 
-	// Get account config
 	account, exists := currentConfig.Accounts[accountName]
 	if !exists {
+		sesWarnf(ctx, "file config maps domain %q to account %q, which is not defined", domain, accountName)
 		return nil
 	}
 
 	// Only return if account is connected or pending (allow pending for first use)
 	if account.Status != StatusConnected && account.Status != StatusPending {
+		sesWarnf(ctx, "file config account %q has status %q (need connected or pending); domain %q falls back to SMTP",
+			accountName, account.Status, domain)
 		return nil
 	}
 

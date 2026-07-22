@@ -103,6 +103,10 @@ func SaveAccountToDB(ctx context.Context, account *v1.SESAccount) (*v1.SESAccoun
 		g.Log().Error(ctx, "Failed to update domain mappings:", err)
 	}
 
+	// Credentials, region, enabled flag and domain mappings may all have
+	// changed, so drop the caches rather than waiting out the TTL.
+	InvalidateAccountCache()
+
 	return GetAccountByIDFromDB(ctx, savedId)
 }
 
@@ -158,74 +162,61 @@ func GetAccountByIDFromDB(ctx context.Context, id int64) (*v1.SESAccount, error)
 
 func DeleteAccountFromDB(ctx context.Context, id int64) error {
 	_, err := g.DB().Model("bm_ses_accounts").Where("id", id).Delete()
+	if err == nil {
+		// Mappings cascade with the account, so any cached resolution to it is
+		// now wrong.
+		InvalidateAccountCache()
+	}
 	return err
 }
 
 func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*AccountConfig, error) {
 	domain := extractDomain(senderEmail)
-	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: email=%s, domain=%s", senderEmail, domain)
+	sesTracef(ctx, "resolving SES account for %s (domain=%s)", senderEmail, domain)
 	if domain == "" {
-		g.Log().Warning(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: empty domain extracted")
+		sesTracef(ctx, "no domain could be extracted from %q", senderEmail)
 		return nil, nil
 	}
-
-	// Diagnostic: count total rows in bm_ses_domain_mapping
-	totalCount, countErr := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Count()
-	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: total rows in bm_ses_domain_mapping=%d, countErr=%v", totalCount, countErr)
-
-	// Diagnostic: list all domains in mapping table
-	allMappings, allErr := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").All()
-	if allErr != nil {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: error listing all mappings: %v", allErr)
-	} else {
-		for i, m := range allMappings {
-			g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: mapping[%d] domain='%s' account_id=%d", i, m["domain"].String(), m["account_id"].Int64())
-		}
-	}
-
-	// Diagnostic: count total rows in bm_ses_accounts
-	acctCount, acctErr := g.DB().Ctx(ctx).Model("bm_ses_accounts").Count()
-	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: total rows in bm_ses_accounts=%d, countErr=%v", acctCount, acctErr)
 
 	// extractDomain already lowercases, so compare case-insensitively: a domain saved as
 	// "Example.com" through the UI would otherwise never match sender "user@example.com".
 	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("LOWER(TRIM(domain)) = ?", domain).One()
 	if err != nil {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: domain mapping query error: %v", err)
+		sesErrorf(ctx, "domain mapping query failed for %q: %v", domain, err)
 		return nil, err
 	}
 
 	var accountId int64
 	if mapping.IsEmpty() {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no exact domain match for '%s', trying wildcard", domain)
+		sesTracef(ctx, "no exact mapping for %q, trying wildcard", domain)
 		mapping, err = g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("TRIM(domain) = ?", "*").One()
 		if err != nil {
-			g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: wildcard query error: %v", err)
+			sesErrorf(ctx, "wildcard mapping query failed: %v", err)
 			return nil, err
 		}
 		if mapping.IsEmpty() {
-			g.Log().Warning(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no wildcard mapping either, returning nil")
+			sesTracef(ctx, "no mapping and no wildcard for %q; this domain uses SMTP", domain)
 			return nil, nil
 		}
 	}
 	accountId = mapping["account_id"].Int64()
-	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: found mapping, account_id=%d", accountId)
+	sesTracef(ctx, "domain %q maps to SES account id=%d", domain, accountId)
 
 	record, err := g.DB().Ctx(ctx).Model("bm_ses_accounts").Where("id", accountId).Where("enabled", 1).One()
 	if err != nil {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account query error: %v", err)
+		sesErrorf(ctx, "account query failed for id=%d: %v", accountId, err)
 		return nil, err
 	}
 	if record.IsEmpty() {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: no enabled account found for id=%d", accountId)
+		sesWarnf(ctx, "domain %q maps to SES account id=%d, but it is missing or disabled; falling back to SMTP", domain, accountId)
 		return nil, nil
 	}
 
 	status := record["status"].String()
-	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account found - name=%s, status=%s, region=%s",
-		record["name"].String(), status, record["region"].String())
+	sesTracef(ctx, "resolved to SES account %q in region %s (status %s)",
+		record["name"].String(), record["region"].String(), status)
 	if status != StatusConnected && status != StatusPending {
-		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: account status '%s' not valid (need connected/pending)", status)
+		sesWarnf(ctx, "domain %q maps to SES account %q with status %q (need connected or pending); falling back to SMTP", domain, record["name"].String(), status)
 		return nil, nil
 	}
 
@@ -273,6 +264,12 @@ func UpdateAccountStatusInDB(ctx context.Context, id int64, status string, messa
 	}
 
 	_, err := g.DB().Model("bm_ses_accounts").Where("id", id).Data(data).Update()
+	if err == nil {
+		// GetAccountForDomainFromDB only returns accounts in connected or
+		// pending state, so a status transition changes routing and any cached
+		// resolution has to go.
+		InvalidateAccountCache()
+	}
 	return err
 }
 

@@ -369,20 +369,20 @@ func qpEncode(content string) string {
 //
 // This is the single shared method all email sending paths should use.
 func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, subject, htmlBody, textBody, displayName, messageID string, extraHeaders map[string]string) (sentViaSES bool, err error) {
-	g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail called: sender=%s, recipients=%v, subject=%s", senderEmail, recipients, subject)
+	sesTracef(ctx, "send requested from %s to %d recipient(s)", senderEmail, len(recipients))
 	account := GetAccountForDomain(senderEmail)
 	if account == nil {
-		g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: GetAccountForDomain returned nil, no SES for", senderEmail)
+		sesTracef(ctx, "no SES account for %s; caller will use SMTP", senderEmail)
 		return false, nil // No SES configured, caller should use SMTP
 	}
-	g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail: got account name=%s, region=%s, status=%s", account.Name, account.Region, account.Status)
+	sesTracef(ctx, "using account %q (region %s, status %s)", account.Name, account.Region, account.Status)
 
 	sesSender, _, sesErr := GetSenderForEmail(ctx, senderEmail)
 	if sesErr != nil {
-		g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: Failed to create SES sender for", senderEmail, "error:", sesErr)
+		sesErrorf(ctx, "account %q is mapped to %s but its client could not be built: %v", account.Name, senderEmail, sesErr)
 		return false, fmt.Errorf("SES account %q is mapped to this domain but its sender could not be created: %w", account.Name, sesErr)
 	}
-	g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: SES sender created successfully")
+	
 
 	// Build From address with display name
 	fromAddress := FormatFromAddress(displayName, senderEmail)
@@ -397,14 +397,14 @@ func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, 
 		MessageID: messageID,
 	}
 
-	g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: calling SendEmail now...")
+	
 	result := sesSender.SendEmail(ctx, input)
 	if result.Success {
-		g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail: SUCCESS! Email sent via SES API to %v, MessageID=%s", recipients, result.MessageID)
+		sesTracef(ctx, "sent via SES, MessageID=%s", result.MessageID)
 		return true, nil
 	}
 
-	g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail: SES send FAILED, error: %v", result.Error)
+	sesErrorf(ctx, "account %q (region %s) rejected a message to %d recipient(s): %v", account.Name, account.Region, len(recipients), result.Error)
 	return false, fmt.Errorf("SES account %q (region %s) rejected the message: %w", account.Name, account.Region, result.Error)
 }
 
@@ -431,7 +431,10 @@ func GetSenderForEmail(ctx context.Context, senderEmail string) (*SESSender, str
 		}
 	}
 
-	sender, err := NewSESSender(account, accountName)
+	// Shared, cached client. sesv2.Client is concurrency-safe and meant to be
+	// long-lived; building one per recipient gave every send its own HTTP
+	// transport (no TLS reuse) and its own retry budget.
+	sender, err := cachedSender(account, accountName)
 	if err != nil {
 		return nil, "", err
 	}

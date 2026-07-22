@@ -112,7 +112,7 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 	// Silently falling back to Postfix here would report "sent successfully" for a test whose
 	// entire purpose is to prove the SES path works, so surface the real AWS error instead.
 	if !sentViaSES && sesErr != nil {
-		g.Log().Error(ctx, "[SES-DEBUG] SendTestEmail: SES configured but failed for", req.Addresser, "error:", sesErr)
+		g.Log().Error(ctx, "[SES] test email: account is configured for", req.Addresser, "but the send failed:", sesErr)
 		res.Code = 500
 		res.SetError(gerror.New(public.LangCtx(ctx, "SES API send failed: {}", sesErr.Error())))
 		return
