@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"mime"
 	"mime/quotedprintable"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -252,6 +253,26 @@ func encodeSubject(subject string) string {
 	return mime.QEncoding.Encode("UTF-8", subject)
 }
 
+// FormatFromAddress builds a From header value from a display name and an
+// address, per RFC 5322 3.4.
+//
+// The previous fmt.Sprintf("%s <%s>", name, addr) broke on two ordinary
+// inputs. A name containing a comma -- "Acme, Inc." -- parses as two separate
+// addresses, and SESv2 validates FromEmailAddress strictly, so it returned
+// InvalidParameterValue and failed *every* recipient of the campaign. A
+// non-ASCII name emitted raw 8-bit bytes into the header.
+//
+// net/mail handles quoting and RFC 2047 encoding correctly, so this delegates
+// rather than reimplementing the rules. An empty display name yields the bare
+// address, which is what the SES API is given today.
+func FormatFromAddress(displayName, email string) string {
+	if displayName == "" {
+		return email
+	}
+	addr := mail.Address{Name: displayName, Address: email}
+	return addr.String()
+}
+
 // headerValueIsSafe reports whether v can appear in a header without
 // terminating the field. RFC 5322 gives no way to escape CR or LF inside a
 // field value, so a value containing them cannot be represented at all.
@@ -364,10 +385,7 @@ func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, 
 	g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: SES sender created successfully")
 
 	// Build From address with display name
-	fromAddress := senderEmail
-	if displayName != "" {
-		fromAddress = fmt.Sprintf("%s <%s>", displayName, senderEmail)
-	}
+	fromAddress := FormatFromAddress(displayName, senderEmail)
 
 	input := &SendEmailInput{
 		From:      fromAddress,

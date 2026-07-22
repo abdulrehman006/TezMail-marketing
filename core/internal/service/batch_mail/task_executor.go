@@ -1272,11 +1272,10 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
 	}
 
-	// Build From address with display name
-	fromAddress := task.Addresser
-	if task.FullName != "" {
-		fromAddress = fmt.Sprintf("%s <%s>", task.FullName, task.Addresser)
-	}
+	// Build From address with display name.
+	// RFC 5322 3.4 quoting/encoding, so a name containing a comma or non-ASCII
+	// characters does not fail the whole campaign at SES validation.
+	fromAddress := ses_api.FormatFromAddress(task.FullName, task.Addresser)
 
 	// Build custom headers
 	headers := make(map[string]string)

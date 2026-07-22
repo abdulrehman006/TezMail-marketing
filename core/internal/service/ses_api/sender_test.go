@@ -2,6 +2,7 @@ package ses_api
 
 import (
 	"context"
+	"net/mail"
 	"strings"
 	"testing"
 )
@@ -124,6 +125,59 @@ func TestBuildRawMessage_LongNonASCIISubjectStaysWithinLineLimit(t *testing.T) {
 		if len(line) > 998 {
 			t.Errorf("header line exceeds RFC 5322 hard limit: %d octets", len(line))
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// From address construction
+// ---------------------------------------------------------------------------
+
+func TestFormatFromAddress_RoundTripsThroughParser(t *testing.T) {
+	// The real contract: whatever we emit, a conforming parser must read back
+	// the same address and the same display name. SESv2 validates
+	// FromEmailAddress strictly, so a value that does not round-trip fails
+	// every recipient of the campaign.
+	cases := []struct {
+		name  string
+		email string
+	}{
+		{"Acme", "sender@example.com"},
+		{"Acme, Inc.", "sender@example.com"},          // comma: parsed as two addresses before
+		{"Café Newsletter", "sender@example.com"},     // non-ASCII: raw 8-bit before
+		{`He said "hi"`, "sender@example.com"},        // embedded quotes
+		{"A <fake@evil.test>", "sender@example.com"},  // angle brackets in the name
+		{"Ünicode Ünlimited", "sender@example.com"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FormatFromAddress(tc.name, tc.email)
+
+			parsed, err := mail.ParseAddress(got)
+			if err != nil {
+				t.Fatalf("emitted an unparseable From header %q: %v", got, err)
+			}
+			if parsed.Address != tc.email {
+				t.Errorf("address changed: got %q, want %q (from %q)", parsed.Address, tc.email, got)
+			}
+			if parsed.Name != tc.name {
+				t.Errorf("display name changed: got %q, want %q (from %q)", parsed.Name, tc.name, got)
+			}
+		})
+	}
+}
+
+func TestFormatFromAddress_EmptyNameYieldsBareAddress(t *testing.T) {
+	// Preserves what the SES API is given today when no display name is set.
+	if got := FormatFromAddress("", "sender@example.com"); got != "sender@example.com" {
+		t.Errorf("got %q, want bare address", got)
+	}
+}
+
+func TestFormatFromAddress_CannotInjectHeaders(t *testing.T) {
+	got := FormatFromAddress("Evil\r\nBcc: attacker@example.com", "sender@example.com")
+	if strings.ContainsAny(got, "\r\n") {
+		t.Errorf("From address leaked a control character: %q", got)
 	}
 }
 
