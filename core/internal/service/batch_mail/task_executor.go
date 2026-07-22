@@ -1262,7 +1262,12 @@ func (e *TaskExecutor) sendEmail(ctx context.Context, task *entity.EmailTask, re
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
 		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmail: BLOCKED - Local SMTP disabled, no SES for", currentTask.Addresser)
-		return &SendResult{Success: false, Error: fmt.Errorf("local SMTP is disabled and no SES configured for this domain")}
+		// RecipientID was omitted here, defaulting to 0. That zero went into
+		// failedIDs, so the batch update targeted row id=0 and matched nothing,
+		// leaving the real recipient stuck at is_sent=2 -- invisible to both the
+		// is_sent=0 work query and the is_sent=1 completion count, so the task
+		// could never finish and was relaunched every 5s forever.
+		return &SendResult{RecipientID: recipient.Id, Success: false, Error: fmt.Errorf("local SMTP is disabled and no SES configured for this domain")}
 	}
 	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmail: ALLOWED - falling back to SMTP for", currentTask.Addresser)
 	return e.sendEmailViaSMTP(ctx, currentTask, recipient, renderedContent, renderedSubject, unsubscribeURL, messageID)
@@ -1276,7 +1281,9 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		// Fall back to SMTP if enabled
 		if !mail_service.IsLocalSMTPEnabled() {
 			g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: BLOCKED - SES sender failed, local SMTP disabled for", task.Addresser)
-			return &SendResult{Success: false, Error: fmt.Errorf("SES failed and local SMTP is disabled")}
+			// See the note above: a missing RecipientID stranded the recipient
+			// at is_sent=2 and wedged the task permanently.
+			return &SendResult{RecipientID: recipient.Id, Success: false, Error: fmt.Errorf("SES failed and local SMTP is disabled")}
 		}
 		g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: ALLOWED - SES sender failed, falling back to SMTP for", task.Addresser)
 		return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
@@ -1309,64 +1316,30 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 	if !result.Success {
 		g.Log().Error(ctx, "SES API send failed for", recipient.Recipient, ":", result.Error)
 
-		// Record SES failure in mailstat tables for statistics tracking
-		go func() {
-			nowMillis := time.Now().UnixMilli()
-			cleanMessageID := strings.Trim(messageID, "<>")
-			sesPostfixID := sesStatsKey("ses-fail-", "", cleanMessageID)
-
-			// Insert into mailstat_message_ids
-			_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
-				"postfix_message_id": sesPostfixID,
-				"message_id":         cleanMessageID,
-				"log_time_millis":    nowMillis,
-			})
-			if err != nil {
-				g.Log().Warning(ctx, "Failed to insert SES failure message ID mapping:", err)
-			}
-
-			// Insert into mailstat_senders
-			_, err = g.DB().Model("mailstat_senders").InsertIgnore(g.Map{
-				"postfix_message_id": sesPostfixID,
-				"sender":             task.Addresser,
-				"size":               len(content),
-				"log_time_millis":    nowMillis,
-			})
-			if err != nil {
-				g.Log().Warning(ctx, "Failed to insert SES failure sender stats:", err)
-			}
-
-			// Insert into mailstat_send_mails with status 'bounced'
-			errorDesc := "SES API error"
-			if result.Error != nil {
-				errorDesc = result.Error.Error()
-				if len(errorDesc) > 200 {
-					errorDesc = errorDesc[:200]
-				}
-			}
-			_, err = g.DB().Model("mailstat_send_mails").InsertIgnore(g.Map{
-				"postfix_message_id": sesPostfixID,
-				"recipient":          recipient.Recipient,
-				"mail_provider":      public.GetMailProviderGroup(recipient.Recipient),
-				"status":             "bounced",
-				"delay":              0,
-				"delays":             "0/0/0/0",
-				"dsn":                "5.0.0",
-				"relay":              "ses-api[" + accountName + "]",
-				"description":        errorDesc,
-				"log_time_millis":    nowMillis,
-			})
-			if err != nil {
-				g.Log().Warning(ctx, "Failed to insert SES failure send stats:", err)
-			}
-		}()
-
-		// Try SMTP fallback if enabled
+		// Try SMTP fallback if enabled.
+		//
+		// The stats row used to be written here, before the fallback ran, so a
+		// message Postfix went on to deliver successfully still recorded a
+		// 'bounced' row. That both inflated the bounce rate and destroyed the
+		// only record that could tell "lost" apart from "delivered via
+		// fallback" -- the two produced identical rows. It is now written only
+		// on the paths where the message really was not delivered.
 		if mail_service.IsLocalSMTPEnabled() {
 			g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: ALLOWED - SES send failed, falling back to SMTP for", recipient.Recipient)
-			return e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
+			fallback := e.sendEmailViaSMTP(ctx, task, recipient, content, subject, unsubscribeURL, messageID)
+			if fallback != nil && fallback.Success {
+				// Delivered over Postfix. Its own log parser records the send,
+				// so writing a synthetic bounce here would double-count it.
+				g.Log().Warning(ctx, "[SES] message to", recipient.Recipient, "was delivered via local SMTP after SES failed. SPF/DKIM are aligned to SES for this domain, so this message may fail DMARC at the receiver.")
+				return fallback
+			}
+			// Fallback failed too: the recipient really is lost, so record it.
+			e.recordSESFailureStats(ctx, task, recipient, accountName, messageID, len(content), result.Error)
+			return fallback
 		}
+
 		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] task_executor.sendEmailViaSESApi: BLOCKED - SES send failed, local SMTP disabled, no fallback for", recipient.Recipient)
+		e.recordSESFailureStats(ctx, task, recipient, accountName, messageID, len(content), result.Error)
 
 		return &SendResult{
 			RecipientID: recipient.Id,
@@ -1479,6 +1452,73 @@ func (e *TaskExecutor) sendEmailViaSMTP(ctx context.Context, task *entity.EmailT
 		Success:     true,
 		Error:       nil,
 	}
+}
+
+// recordSESFailureStats files a failed SES send in the mailstat tables so it
+// shows up in bounce reporting and stays forensically recoverable.
+//
+// Call this ONLY when the message was genuinely not delivered -- not when the
+// SMTP fallback subsequently succeeded, or the row would contradict reality.
+//
+// Parameters are passed explicitly rather than captured, because this runs in
+// its own goroutine and the caller's locals are reused across recipients.
+func (e *TaskExecutor) recordSESFailureStats(
+	ctx context.Context,
+	task *entity.EmailTask,
+	recipient *entity.RecipientInfo,
+	accountName string,
+	messageID string,
+	contentSize int,
+	sendErr error,
+) {
+	sender := task.Addresser
+	recipientAddr := recipient.Recipient
+
+	errorDesc := "SES API error"
+	if sendErr != nil {
+		errorDesc = sendErr.Error()
+		if len(errorDesc) > 200 {
+			errorDesc = errorDesc[:200]
+		}
+	}
+
+	go func() {
+		nowMillis := time.Now().UnixMilli()
+		cleanMessageID := strings.Trim(messageID, "<>")
+		sesPostfixID := sesStatsKey("ses-fail-", "", cleanMessageID)
+
+		if _, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
+			"postfix_message_id": sesPostfixID,
+			"message_id":         cleanMessageID,
+			"log_time_millis":    nowMillis,
+		}); err != nil {
+			g.Log().Warning(ctx, "Failed to insert SES failure message ID mapping:", err)
+		}
+
+		if _, err := g.DB().Model("mailstat_senders").InsertIgnore(g.Map{
+			"postfix_message_id": sesPostfixID,
+			"sender":             sender,
+			"size":               contentSize,
+			"log_time_millis":    nowMillis,
+		}); err != nil {
+			g.Log().Warning(ctx, "Failed to insert SES failure sender stats:", err)
+		}
+
+		if _, err := g.DB().Model("mailstat_send_mails").InsertIgnore(g.Map{
+			"postfix_message_id": sesPostfixID,
+			"recipient":          recipientAddr,
+			"mail_provider":      public.GetMailProviderGroup(recipientAddr),
+			"status":             "bounced",
+			"delay":              0,
+			"delays":             "0/0/0/0",
+			"dsn":                "5.0.0",
+			"relay":              "ses-api[" + accountName + "]",
+			"description":        errorDesc,
+			"log_time_millis":    nowMillis,
+		}); err != nil {
+			g.Log().Warning(ctx, "Failed to insert SES failure send stats:", err)
+		}
+	}()
 }
 
 // sesStatsKey builds the synthetic postfix_message_id under which a SES send
