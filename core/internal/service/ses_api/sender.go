@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"mime"
 	"mime/quotedprintable"
 	"strings"
 	"time"
@@ -88,7 +89,7 @@ func (s *SESSender) SendEmail(ctx context.Context, input *SendEmailInput) *SendE
 	// Check if we need to send raw email (for custom headers)
 	if len(input.Headers) > 0 || input.MessageID != "" {
 		// Use raw email format for custom headers
-		rawMessage := s.buildRawMessage(input)
+		rawMessage := s.buildRawMessage(ctx, input)
 		emailContent = &types.EmailContent{
 			Raw: &types.RawMessage{
 				Data: []byte(rawMessage),
@@ -155,33 +156,49 @@ func (s *SESSender) SendEmail(ctx context.Context, input *SendEmailInput) *SendE
 	return output
 }
 
+// writeHeader appends one header field, dropping it if the value cannot be
+// safely represented.
+//
+// Dropping rather than passing through is the conservative choice: a header
+// value carrying CR/LF would otherwise terminate its own field and inject
+// whatever follows. Dropping a List-Unsubscribe for one malformed recipient is
+// a far smaller problem than injecting a Bcc into everyone's mail. The drop is
+// always logged so it is visible on a live server rather than silent.
+//
+// Values are not silently rewritten -- a stripped value would ship subtly
+// wrong content to the whole list with nothing to indicate it happened.
+func (s *SESSender) writeHeader(ctx context.Context, b *strings.Builder, key, value string) {
+	if !headerValueIsSafe(key) || !headerValueIsSafe(value) {
+		sesWarnf(ctx, "dropped header %q on a message from account %q: value contains CR, LF or NUL and cannot be represented (RFC 5322). This usually means contact data or a template needs cleaning.",
+			key, s.accountName)
+		return
+	}
+	b.WriteString(foldHeaderLine(key + ": " + value))
+	b.WriteString("\r\n")
+}
+
 // buildRawMessage builds a raw MIME message with custom headers
-func (s *SESSender) buildRawMessage(input *SendEmailInput) string {
+func (s *SESSender) buildRawMessage(ctx context.Context, input *SendEmailInput) string {
 	var builder strings.Builder
 
 	// Add Message-ID header
 	if input.MessageID != "" {
-		builder.WriteString(fmt.Sprintf("Message-ID: %s\r\n", input.MessageID))
+		s.writeHeader(ctx, &builder, "Message-ID", input.MessageID)
 	}
 
-	// Add From header
-	builder.WriteString(fmt.Sprintf("From: %s\r\n", input.From))
+	s.writeHeader(ctx, &builder, "From", input.From)
+	s.writeHeader(ctx, &builder, "To", strings.Join(input.To, ", "))
 
-	// Add To header
-	builder.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(input.To, ", ")))
+	// encodeSubject cannot emit CR/LF, so this is safe by construction, but it
+	// goes through the same path so nothing bypasses validation.
+	s.writeHeader(ctx, &builder, "Subject", encodeSubject(input.Subject))
+	s.writeHeader(ctx, &builder, "Date", time.Now().Format(time.RFC1123Z))
 
-	// Add Subject header
-	builder.WriteString(fmt.Sprintf("Subject: %s\r\n", encodeSubject(input.Subject)))
-
-	// Add Date header
-	builder.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))
-
-	// Add MIME version
 	builder.WriteString("MIME-Version: 1.0\r\n")
 
 	// Add custom headers
 	for key, value := range input.Headers {
-		builder.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+		s.writeHeader(ctx, &builder, key, value)
 	}
 
 	// Add X-Mailer
@@ -216,23 +233,76 @@ func (s *SESSender) handleSendError(ctx context.Context, err error) {
 	}
 }
 
-// encodeSubject encodes subject for MIME (RFC 2047)
+// encodeSubject encodes a subject for use in a MIME header (RFC 2047).
+//
+// This delegates to the standard library rather than hand-rolling the check.
+// The previous implementation only encoded when it saw a rune above 127, so CR
+// and LF -- both well below that -- passed straight through into the header
+// block and could inject arbitrary headers. Subjects are template-rendered
+// with contact data, so that input is attacker-reachable.
+//
+// mime.QEncoding treats every octet below 0x20 as needing encoding, which
+// neutralises CR/LF as a consequence of being correct rather than as a special
+// case someone has to remember. It also folds long values into multiple
+// encoded-words, which RFC 2047 requires (75 chars per word) and the old
+// single-word version never did.
+//
+// This matches what the SMTP path has always done via Message.MailTitle.
 func encodeSubject(subject string) string {
-	// Check if subject contains non-ASCII characters
-	needsEncoding := false
-	for _, r := range subject {
-		if r > 127 {
-			needsEncoding = true
-			break
+	return mime.QEncoding.Encode("UTF-8", subject)
+}
+
+// headerValueIsSafe reports whether v can appear in a header without
+// terminating the field. RFC 5322 gives no way to escape CR or LF inside a
+// field value, so a value containing them cannot be represented at all.
+func headerValueIsSafe(v string) bool {
+	return !strings.ContainsAny(v, "\r\n\x00")
+}
+
+// maxHeaderLineLen is the RFC 5322 2.1.1 "SHOULD" limit of 78 octets. The hard
+// limit is 998; folding at 78 keeps us clear of both and matches what common
+// MTAs emit.
+const maxHeaderLineLen = 78
+
+// foldHeaderLine folds a single "Key: Value" line so no line exceeds
+// maxHeaderLineLen, per RFC 5322 2.2.3.
+//
+// mime.QEncoding.Encode emits a run of space-separated encoded-words but does
+// not fold -- folding is the header writer's job. Without this, a long
+// non-ASCII subject, or a long List-Unsubscribe URL alongside one, produces a
+// single line that can breach the 998-octet hard limit and get the message
+// rejected outright.
+//
+// Folding only ever happens at an existing space, which is a legal FWS point.
+// A long run with no spaces (a bare URL) has no safe fold point, so it is left
+// intact rather than corrupted -- receivers tolerate this in practice.
+// A line already within the limit is returned untouched, so ordinary headers
+// are byte-for-byte unchanged.
+func foldHeaderLine(line string) string {
+	if len(line) <= maxHeaderLineLen {
+		return line
+	}
+
+	var out strings.Builder
+	cur := 0 // length of the line being built
+
+	for i, word := range strings.Split(line, " ") {
+		switch {
+		case i == 0:
+			out.WriteString(word)
+			cur = len(word)
+		case cur+1+len(word) <= maxHeaderLineLen:
+			out.WriteString(" ")
+			out.WriteString(word)
+			cur += 1 + len(word)
+		default:
+			// Fold: CRLF followed by a single space continues the field.
+			out.WriteString("\r\n ")
+			out.WriteString(word)
+			cur = 1 + len(word)
 		}
 	}
-
-	if !needsEncoding {
-		return subject
-	}
-
-	// Use UTF-8 encoding
-	return fmt.Sprintf("=?UTF-8?B?%s?=", base64Encode(subject))
+	return out.String()
 }
 
 // base64Encode encodes string to base64 (single line, for headers)
