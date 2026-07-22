@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gogf/gf/util/grand"
 	"github.com/gogf/gf/v2/database/gdb"
@@ -1620,12 +1621,27 @@ func truncateError(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
-	const maxLen = 500
-	if len(msg) > maxLen {
-		return msg[:maxLen]
+	return truncateUTF8(err.Error(), 500)
+}
+
+// truncateUTF8 cuts s to at most maxBytes without splitting a rune.
+//
+// Plain byte slicing can land mid-rune and yield invalid UTF-8. Postgres
+// rejects that outright in a text column ("invalid byte sequence for encoding
+// UTF8"), so the UPDATE carrying it would fail -- and because that update is
+// what moves a recipient out of the claimed state, the row would be stranded at
+// is_sent=2 and the task could never complete. An error message quoting an
+// internationalised address is enough to trigger it.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
 	}
-	return msg
+	cut := s[:maxBytes]
+	// Walk back over any trailing continuation bytes to land on a boundary.
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
 }
 
 // recordSESFailureStats files a failed SES send in the mailstat tables so it
@@ -1650,10 +1666,9 @@ func (e *TaskExecutor) recordSESFailureStats(
 
 	errorDesc := "SES API error"
 	if sendErr != nil {
-		errorDesc = sendErr.Error()
-		if len(errorDesc) > 200 {
-			errorDesc = errorDesc[:200]
-		}
+		// Rune-safe: a mid-rune cut yields invalid UTF-8, which Postgres
+		// rejects, losing the stats row entirely.
+		errorDesc = truncateUTF8(sendErr.Error(), 200)
 	}
 
 	go func() {

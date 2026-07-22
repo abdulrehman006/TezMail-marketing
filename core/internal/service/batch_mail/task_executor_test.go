@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 )
 
 // ---------------------------------------------------------------------------
@@ -150,6 +151,52 @@ func TestGroupFailures_SeparatesDifferentOutcomes(t *testing.T) {
 func TestGroupFailures_EmptyInput(t *testing.T) {
 	if groups := groupFailures(nil); len(groups) != 0 {
 		t.Errorf("nil input produced %d groups", len(groups))
+	}
+}
+
+func TestTruncateUTF8_NeverProducesInvalidUTF8(t *testing.T) {
+	// Byte slicing can cut through a multi-byte rune. Postgres rejects invalid
+	// UTF-8 in a text column, so the UPDATE carrying it fails -- and that
+	// update is what releases a recipient from the claimed state, so the row
+	// would be stranded at is_sent=2 and the task could never finish.
+	//
+	// Sweep the cut across a rune boundary so at least one case lands mid-rune.
+	for pad := 495; pad <= 502; pad++ {
+		msg := strings.Repeat("x", pad) + "é" + strings.Repeat("y", 50)
+		got := truncateUTF8(msg, 500)
+
+		if !utf8.ValidString(got) {
+			t.Errorf("pad=%d produced invalid UTF-8", pad)
+		}
+		if len(got) > 500 {
+			t.Errorf("pad=%d exceeded the byte cap: %d", pad, len(got))
+		}
+	}
+}
+
+func TestTruncateUTF8_MultiByteScripts(t *testing.T) {
+	// 3-byte and 4-byte runes, so the walk-back has to skip more than one byte.
+	for _, s := range []string{
+		strings.Repeat("あ", 400), // 3 bytes each
+		strings.Repeat("😀", 300), // 4 bytes each
+		strings.Repeat("ü", 400), // 2 bytes each
+	} {
+		for _, limit := range []int{100, 250, 499, 500, 501} {
+			got := truncateUTF8(s, limit)
+			if !utf8.ValidString(got) {
+				t.Errorf("invalid UTF-8 at limit %d", limit)
+			}
+			if len(got) > limit {
+				t.Errorf("exceeded limit %d: got %d bytes", limit, len(got))
+			}
+		}
+	}
+}
+
+func TestTruncateUTF8_ShortInputUnchanged(t *testing.T) {
+	const s = "ThrottlingException: Maximum sending rate exceeded"
+	if got := truncateUTF8(s, 500); got != s {
+		t.Errorf("short string was altered: %q", got)
 	}
 }
 
