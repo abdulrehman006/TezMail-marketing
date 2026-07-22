@@ -187,7 +187,9 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 	acctCount, acctErr := g.DB().Ctx(ctx).Model("bm_ses_accounts").Count()
 	g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: total rows in bm_ses_accounts=%d, countErr=%v", acctCount, acctErr)
 
-	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("TRIM(domain) = ?", domain).One()
+	// extractDomain already lowercases, so compare case-insensitively: a domain saved as
+	// "Example.com" through the UI would otherwise never match sender "user@example.com".
+	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("LOWER(TRIM(domain)) = ?", domain).One()
 	if err != nil {
 		g.Log().Warningf(ctx, "[SES-DEBUG] GetAccountForDomainFromDB: domain mapping query error: %v", err)
 		return nil, err
