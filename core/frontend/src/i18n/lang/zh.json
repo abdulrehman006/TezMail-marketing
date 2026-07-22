@@ -337,6 +337,7 @@
 					"recipientsRequired": "请选择联系人",
 					"sendTimeRequired": "请选择发送时间",
 					"testEmailRequired": "请输入测试邮箱",
+					"addresserRequired": "请选择发件人地址",
 					"templateRequired": "请选择邮件模板"
 				},
 				"discard": {

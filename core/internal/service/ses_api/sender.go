@@ -266,7 +266,16 @@ func qpEncode(content string) string {
 
 // TrySendEmail attempts to send email via SES API first (if configured for the sender domain),
 // falling back to SMTP. Returns (sent via SES, error). If sent via SES is true, the caller
-// should skip SMTP. If false, the caller should proceed with SMTP as usual.
+// should skip SMTP.
+//
+// The error return distinguishes two very different "not sent via SES" cases:
+//   - (false, nil) — no SES account is mapped to this sender domain. Falling back to SMTP
+//     is the expected, correct behaviour.
+//   - (false, err) — SES *is* configured for this domain but the send failed (bad
+//     credentials, unverified identity, sandbox restriction, malformed message...).
+//     Callers that must not silently misreport delivery (e.g. the test-email endpoint)
+//     should surface this instead of quietly falling back to Postfix.
+//
 // This is the single shared method all email sending paths should use.
 func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, subject, htmlBody, textBody, displayName, messageID string, extraHeaders map[string]string) (sentViaSES bool, err error) {
 	g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail called: sender=%s, recipients=%v, subject=%s", senderEmail, recipients, subject)
@@ -280,7 +289,7 @@ func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, 
 	sesSender, _, sesErr := GetSenderForEmail(ctx, senderEmail)
 	if sesErr != nil {
 		g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: Failed to create SES sender for", senderEmail, "error:", sesErr)
-		return false, nil
+		return false, fmt.Errorf("SES account %q is mapped to this domain but its sender could not be created: %w", account.Name, sesErr)
 	}
 	g.Log().Warning(ctx, "[SES-DEBUG] TrySendEmail: SES sender created successfully")
 
@@ -308,7 +317,7 @@ func TrySendEmail(ctx context.Context, senderEmail string, recipients []string, 
 	}
 
 	g.Log().Warningf(ctx, "[SES-DEBUG] TrySendEmail: SES send FAILED, error: %v", result.Error)
-	return false, nil
+	return false, fmt.Errorf("SES account %q (region %s) rejected the message: %w", account.Name, account.Region, result.Error)
 }
 
 // GetSenderForEmail returns a SES sender for the given email address

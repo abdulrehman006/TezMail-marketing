@@ -315,19 +315,25 @@ func (e *EmailSender) Disconnect() error {
 	return err
 }
 
-// GenerateMessageID generates a unique Message-ID for email
-func (e *EmailSender) GenerateMessageID() string {
+// NewMessageID generates a unique Message-ID for the given sender address.
+// Unlike GenerateMessageID it needs no established SMTP connection, so paths that
+// send via the SES API can stamp a Message-ID without dialling Postfix first.
+func NewMessageID(senderEmail string) string {
 	randomBytes := grand.B(16)
 	randomID := hex.EncodeToString(randomBytes)
 	timestampMillis := time.Now().UnixMilli()
 
-	domain := strings.SplitN(e.Email, "@", 2)
 	domainPart := "billionmail"
-	if len(domain) > 1 {
+	if domain := strings.SplitN(senderEmail, "@", 2); len(domain) > 1 {
 		domainPart = domain[1]
 	}
 
 	return fmt.Sprintf("<%d.%s@%s>", timestampMillis, randomID, domainPart)
+}
+
+// GenerateMessageID generates a unique Message-ID for email
+func (e *EmailSender) GenerateMessageID() string {
+	return NewMessageID(e.Email)
 }
 
 // Send sends an email to specified recipients

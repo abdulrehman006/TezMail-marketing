@@ -335,6 +335,7 @@
 					"recipientsRequired": "Please select contact person",
 					"sendTimeRequired": "Please select send time",
 					"testEmailRequired": "Please enter test email",
+					"addresserRequired": "Please select a sender address",
 					"templateRequired": "Please select email template"
 				},
 				"discard": {

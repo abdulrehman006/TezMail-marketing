@@ -330,8 +330,14 @@ const handleSendTest = async () => {
 		return
 	}
 
+	if (!form.addresser) {
+		Message.error(t('market.task.edit.validation.addresserRequired'))
+		return
+	}
+
 	await sendTestEmail({
-		addresser: form.addresser || '',
+		addresser: form.addresser,
+		full_name: form.full_name || '',
 		subject: form.subject,
 		recipient: testEmail.value,
 		template_id: form.template_id || 0,

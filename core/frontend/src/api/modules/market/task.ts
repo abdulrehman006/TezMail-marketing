@@ -108,6 +108,7 @@ export function resumeTask(params: { task_id: number }) {
  */
 export function sendTestEmail(params: {
 	addresser: string
+	full_name?: string
 	subject: string
 	recipient: string
 	template_id: number

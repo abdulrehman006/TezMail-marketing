@@ -323,6 +323,7 @@
 					"recipientsRequired": "連絡先を選択してください",
 					"sendTimeRequired": "送信時間を選択してください",
 					"testEmailRequired": "テストメールを入力してください",
+					"addresserRequired": "送信元アドレスを選択してください",
 					"templateRequired": "メールテンプレートを選択してください"
 				},
 				"discard": {
