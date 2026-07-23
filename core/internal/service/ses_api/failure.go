@@ -49,23 +49,55 @@ func (k FailureKind) String() string {
 	}
 }
 
-// dailyQuotaMarkers identify a TooManyRequestsException that is a 24-hour
-// sending-limit exhaustion rather than per-second throttling.
+// A TooManyRequestsException from SES is always one of exactly two things: a
+// per-second sending-rate limit, or a 24-hour volume cap. They need opposite
+// responses -- a rate limit clears in seconds and is worth retrying; a daily
+// cap does not clear until the window rolls, so retrying is pure waste and the
+// campaign should pause. Only the message text tells them apart.
 //
-// SES reports both through the same exception type, but they need opposite
-// responses: a rate limit clears in seconds and is worth retrying, whereas a
-// daily quota does not clear until the 24-hour window rolls and retrying is
-// pure waste. Only the message text distinguishes them.
-var dailyQuotaMarkers = []string{
-	"Daily message quota exceeded",
-	"Daily sending quota exceeded",
-	"quota exceeded",
+// Rather than enumerate the (open-ended, occasionally reworded) ways AWS phrases
+// the daily cap, match the ONE thing that reliably marks the retryable case --
+// a per-second rate limit -- and treat every other throttle as a volume block.
+// That way a reworded daily-quota message ("you have reached your daily sending
+// quota", localised text, etc.) fails safe toward pausing rather than burning
+// the list.
+
+// perSecondRateMarkers identify a throttle that is a per-second sending-rate
+// limit, i.e. the retryable kind.
+var perSecondRateMarkers = []string{
+	"maximum sending rate",
+	"sending rate exceeded",
+	"maximum send rate",
+	"rate exceeded",
+	"per second",
 }
 
+// isPerSecondRateLimit reports whether a throttle message is a per-second rate
+// limit (retryable) rather than a volume cap (account-blocked).
+func isPerSecondRateLimit(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, marker := range perSecondRateMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// isDailyQuotaExhausted reports whether a message names a daily/volume quota
+// directly. Used by the string-fallback path, where -- unlike inside a typed
+// throttle exception -- there is no type context to lean on, so this stays
+// specific to avoid misclassifying unrelated errors that merely say "quota".
 func isDailyQuotaExhausted(msg string) bool {
 	lower := strings.ToLower(msg)
-	for _, marker := range dailyQuotaMarkers {
-		if strings.Contains(lower, strings.ToLower(marker)) {
+	for _, marker := range []string{
+		"daily message quota",
+		"daily sending quota",
+		"daily quota",
+		"24-hour",
+		"24 hour",
+	} {
+		if strings.Contains(lower, marker) {
 			return true
 		}
 	}
@@ -89,13 +121,20 @@ func ClassifyFailure(err error) FailureKind {
 		return FailurePermanent
 	}
 
-	// --- Account-level: nothing on this account can send until it is fixed ---
+	// --- Account-level: nothing on this campaign can send until it is fixed ---
 
 	var accountSuspended *types.AccountSuspendedException
 	var sendingPaused *types.SendingPausedException
+	// An unverified MAIL FROM domain affects every message in the campaign --
+	// they all share the same sender -- and it is operator-fixable in minutes
+	// by verifying the domain. Writing off each recipient one by one would burn
+	// the whole list for a condition a pause preserves it through.
+	var mailFromNotVerified *types.MailFromDomainNotVerifiedException
 
 	switch {
-	case errors.As(err, &accountSuspended), errors.As(err, &sendingPaused):
+	case errors.As(err, &accountSuspended),
+		errors.As(err, &sendingPaused),
+		errors.As(err, &mailFromNotVerified):
 		return FailureAccountBlocked
 	}
 
@@ -106,22 +145,21 @@ func ClassifyFailure(err error) FailureKind {
 	var limitExceeded *types.LimitExceededException
 
 	if errors.As(err, &tooManyRequests) || errors.As(err, &limitExceeded) {
-		if isDailyQuotaExhausted(err.Error()) {
-			return FailureAccountBlocked
+		// Inside a typed throttle exception, anything that is NOT a per-second
+		// rate limit is a volume cap -- fail safe toward pausing.
+		if isPerSecondRateLimit(err.Error()) {
+			return FailureTransient
 		}
-		return FailureTransient
+		return FailureAccountBlocked
 	}
 
 	// --- Message-level: this message is wrong, others may be fine ---
 
-	var mailFromNotVerified *types.MailFromDomainNotVerifiedException
 	var badRequest *types.BadRequestException
 	var notFound *types.NotFoundException
 
 	switch {
-	case errors.As(err, &mailFromNotVerified),
-		errors.As(err, &badRequest),
-		errors.As(err, &notFound):
+	case errors.As(err, &badRequest), errors.As(err, &notFound):
 		return FailurePermanent
 	}
 
@@ -164,7 +202,9 @@ func ClassifyFailure(err error) FailureKind {
 			"ExpiredTokenException", "MissingAuthenticationToken":
 			return FailureAccountBlocked
 		case "ThrottlingException", "Throttling", "RequestThrottled":
-			if isDailyQuotaExhausted(err.Error()) {
+			// A generic throttle code is usually a rate limit, so default to
+			// transient -- but if it names a daily/volume quota, block.
+			if !isPerSecondRateLimit(err.Error()) && isDailyQuotaExhausted(err.Error()) {
 				return FailureAccountBlocked
 			}
 			return FailureTransient

@@ -570,6 +570,14 @@ func (e *TaskExecutor) ResumeTask(taskId int) error {
 	// restore running status
 	e.isPaused.Store(false)
 
+	// Re-arm the circuit breaker. This executor is reused across a
+	// pause/resume, so without resetting the breaker a task paused
+	// automatically by an account-level block would resume with the breaker
+	// already tripped -- and if the account were still blocked, the breaker's
+	// trip-once guard would swallow the next block and let the campaign burn a
+	// full pass over every remaining recipient before pausing again.
+	e.breakerTripped.Store(false)
+
 	// send resume signal
 	select {
 	case e.resumeChan <- struct{}{}:
@@ -1719,12 +1727,33 @@ func (e *TaskExecutor) tripCircuitBreaker(ctx context.Context, cause error) {
 //     because we could not ask about the quota would turn a monitoring blip
 //     into an outage, and the send path still handles a real rejection.
 func (e *TaskExecutor) checkSendQuotaBeforeStart(ctx context.Context, taskId int, task *entity.EmailTask) error {
+	// Count only recipients that are actually DUE right now -- the exact
+	// population the send loop will attempt this run (getNextRecipientBatch
+	// filters is_sent=0 AND sent_time <= now). Counting all is_sent=0 rows was
+	// wrong in two ways:
+	//
+	//   - Warmup and retry-backoff park large numbers of recipients at
+	//     is_sent=0 with sent_time days in the future. Counting them against a
+	//     single day's remaining quota made the gate pause warmup campaigns
+	//     that would have paced safely -- defeating the warmup subsystem it
+	//     shares a codebase with.
+	//   - A campaign whose recipients are all deferred (fully warmup-paced, or
+	//     all in backoff) would report pending > 0 on every 5s scheduler
+	//     relaunch, making a live AWS GetAccount call each time for a campaign
+	//     that is not going to send anything this run.
+	//
+	// With the sent_time filter, a campaign with nothing due counts 0 and
+	// returns below without touching AWS, and a warmup campaign is measured by
+	// the batch actually about to go out. Tomorrow's quota is a fresh
+	// allowance, so gating on the whole future campaign was never right anyway.
+	now := time.Now().Unix()
 	pending, err := g.DB().Model("recipient_info").
 		Where("task_id", taskId).
 		Where("is_sent", 0).
+		Where("sent_time <= ?", now).
 		Count()
 	if err != nil {
-		g.Log().Warningf(ctx, "task %d: could not count pending recipients for the quota check: %v", taskId, err)
+		g.Log().Warningf(ctx, "task %d: could not count due recipients for the quota check: %v", taskId, err)
 		return nil
 	}
 	if pending == 0 {

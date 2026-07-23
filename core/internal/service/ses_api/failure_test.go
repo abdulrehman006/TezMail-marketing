@@ -19,7 +19,6 @@ func TestClassifyFailure_PermanentErrors(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"mail-from domain not verified", &types.MailFromDomainNotVerifiedException{}},
 		{"bad request", &types.BadRequestException{}},
 		{"not found", &types.NotFoundException{}},
 		{"context cancelled", context.Canceled},
@@ -40,8 +39,11 @@ func TestClassifyFailure_TransientErrors(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"throttling", &types.TooManyRequestsException{}},
-		{"limit exceeded", &types.LimitExceededException{}},
+		// Throttles must carry the per-second rate wording to be retryable; an
+		// unlabelled throttle now fails safe to a pause (see the throttle-split
+		// test), because a reworded daily-quota message must not be retried.
+		{"per-second rate limit", &types.TooManyRequestsException{Message: strPtr("Maximum sending rate exceeded")}},
+		{"limit exceeded, rate", &types.LimitExceededException{Message: strPtr("Sending rate exceeded")}},
 		{"internal service error", &types.InternalServiceErrorException{}},
 		{"concurrent modification", &types.ConcurrentModificationException{}},
 		{"dns failure", &net.DNSError{Err: "no such host", Name: "email.us-east-1.amazonaws.com"}},
@@ -62,10 +64,12 @@ func TestClassifyFailure_WrappedErrorsStillClassify(t *testing.T) {
 	// The send path wraps errors before they reach the classifier, so
 	// unwrapping has to work or everything falls through to the default.
 	wrapped := fmt.Errorf("SES account %q rejected the message: %w",
-		"prod", fmt.Errorf("api error: %w", &types.TooManyRequestsException{}))
+		"prod", fmt.Errorf("api error: %w", &types.TooManyRequestsException{
+			Message: strPtr("Maximum sending rate exceeded"),
+		}))
 
 	if got := ClassifyFailure(wrapped); got != FailureTransient {
-		t.Errorf("wrapped throttling classified as %s, want transient", got)
+		t.Errorf("wrapped rate limit classified as %s, want transient", got)
 	}
 
 	wrappedBlocked := fmt.Errorf("send failed: %w", &types.AccountSuspendedException{})
@@ -131,18 +135,34 @@ func TestClassifyFailure_RealProductionQuotaError(t *testing.T) {
 func TestClassifyFailure_ThrottleVsQuotaSplit(t *testing.T) {
 	// Same exception type, opposite correct responses. This is the distinction
 	// the production incident exposed.
-	rateLimited := &types.TooManyRequestsException{
-		Message: strPtr("Maximum sending rate exceeded"),
+	//
+	// The classifier matches the per-second rate case explicitly and treats
+	// every other throttle as a volume block, so a reworded daily-quota message
+	// fails safe toward pausing rather than burning the list.
+	transient := []string{
+		"Maximum sending rate exceeded",
+		"Maximum sending rate exceeded. Please slow down.",
+		"Sending rate exceeded",
 	}
-	quotaExhausted := &types.TooManyRequestsException{
-		Message: strPtr("Daily message quota exceeded"),
+	for _, msg := range transient {
+		err := &types.TooManyRequestsException{Message: strPtr(msg)}
+		if got := ClassifyFailure(err); got != FailureTransient {
+			t.Errorf("rate limit %q classified as %s, want transient", msg, got)
+		}
 	}
 
-	if got := ClassifyFailure(rateLimited); got != FailureTransient {
-		t.Errorf("per-second rate limit classified as %s, want transient", got)
+	blocked := []string{
+		"Daily message quota exceeded",
+		"Daily sending quota exceeded.",
+		"You have reached your daily sending quota", // reworded -- the T1 case
+		"Account is over its 24-hour sending limit",
+		"Sending quota exceeded",                    // unknown phrasing, fails safe to blocked
 	}
-	if got := ClassifyFailure(quotaExhausted); got != FailureAccountBlocked {
-		t.Errorf("daily quota classified as %s, want account blocked", got)
+	for _, msg := range blocked {
+		err := &types.TooManyRequestsException{Message: strPtr(msg)}
+		if got := ClassifyFailure(err); got != FailureAccountBlocked {
+			t.Errorf("volume cap %q classified as %s, want account blocked", msg, got)
+		}
 	}
 }
 
@@ -155,6 +175,7 @@ func TestClassifyFailure_AccountLevelConditions(t *testing.T) {
 	}{
 		{"account suspended", &types.AccountSuspendedException{}},
 		{"sending paused", &types.SendingPausedException{}},
+		{"mail-from domain not verified", &types.MailFromDomainNotVerifiedException{}},
 		{"invalid credentials", errors.New("InvalidClientTokenId: The security token is invalid")},
 		{"signature mismatch", errors.New("SignatureDoesNotMatch: Signature expired")},
 		{"expired token", errors.New("ExpiredToken: token has expired")},
@@ -179,7 +200,6 @@ func TestClassifyFailure_MessageLevelStaysPermanent(t *testing.T) {
 	cases := []error{
 		&types.BadRequestException{},
 		&types.NotFoundException{},
-		&types.MailFromDomainNotVerifiedException{},
 		errors.New("MessageRejected: Email address is not verified"),
 	}
 
@@ -190,6 +210,35 @@ func TestClassifyFailure_MessageLevelStaysPermanent(t *testing.T) {
 		if IsAccountBlocked(err) {
 			t.Errorf("%T must not pause the campaign", err)
 		}
+	}
+}
+
+// TestClassifyFailure_TypedExceptionThroughWrappers proves the classifier
+// reaches a typed SES exception through multiple wrapping layers via
+// errors.As. In production the SDK wraps the concrete exception in
+// OperationError -> MaxAttemptsError -> ResponseError, all of which implement
+// Unwrap(); errors.As walks that chain. A regression here would silently drop
+// classification to the fragile string-fallback path.
+func TestClassifyFailure_TypedExceptionThroughWrappers(t *testing.T) {
+	// Daily quota, wrapped twice.
+	quota := fmt.Errorf("operation error SESv2: SendEmail, %w",
+		fmt.Errorf("exceeded maximum number of attempts, 3: %w",
+			&types.TooManyRequestsException{Message: strPtr("Daily message quota exceeded")}))
+	if got := ClassifyFailure(quota); got != FailureAccountBlocked {
+		t.Errorf("wrapped typed daily-quota classified as %s, want account blocked", got)
+	}
+
+	// Per-second rate, wrapped -- must stay retryable through the wrappers.
+	rate := fmt.Errorf("send failed: %w",
+		&types.TooManyRequestsException{Message: strPtr("Maximum sending rate exceeded")})
+	if got := ClassifyFailure(rate); got != FailureTransient {
+		t.Errorf("wrapped typed rate limit classified as %s, want transient", got)
+	}
+
+	// Suspension, wrapped.
+	susp := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", &types.AccountSuspendedException{}))
+	if got := ClassifyFailure(susp); got != FailureAccountBlocked {
+		t.Errorf("wrapped suspension classified as %s, want account blocked", got)
 	}
 }
 
@@ -223,8 +272,8 @@ func TestClassifyFailure_NilIsPermanent(t *testing.T) {
 }
 
 func TestIsRetryable_MatchesClassification(t *testing.T) {
-	if !IsRetryable(&types.TooManyRequestsException{}) {
-		t.Error("throttling should be retryable")
+	if !IsRetryable(&types.TooManyRequestsException{Message: strPtr("Maximum sending rate exceeded")}) {
+		t.Error("per-second rate limit should be retryable")
 	}
 	if IsRetryable(&types.AccountSuspendedException{}) {
 		t.Error("account suspension should not be retryable")

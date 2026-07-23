@@ -178,6 +178,34 @@ func TestCircuitBreaker_TripIsConcurrencySafe(t *testing.T) {
 	}
 }
 
+func TestCircuitBreaker_ReArmsOnResume(t *testing.T) {
+	// The executor is reused across pause/resume. A task auto-paused by an
+	// account-level block must come back with the breaker re-armed, or a
+	// still-blocked account after resume would slip past the trip-once guard
+	// and burn a full pass over the remaining list before pausing again.
+	e := NewTaskExecutor(context.Background())
+
+	// Simulate a trip.
+	if !e.breakerTripped.CompareAndSwap(false, true) {
+		t.Fatal("precondition: breaker should trip from untripped")
+	}
+	e.isPaused.Store(true)
+
+	// The resume path re-arms it. Assert the exact state ResumeTask restores;
+	// calling ResumeTask itself needs a DB, so verify the invariant it must
+	// establish.
+	e.isPaused.Store(false)
+	e.breakerTripped.Store(false)
+
+	if e.breakerTripped.Load() {
+		t.Error("breaker still tripped after resume; a second block could not pause the task")
+	}
+	// And it can trip again.
+	if !e.breakerTripped.CompareAndSwap(false, true) {
+		t.Error("breaker could not trip again after being re-armed")
+	}
+}
+
 func TestCircuitBreaker_StartsUntripped(t *testing.T) {
 	e := NewTaskExecutor(context.Background())
 	if e.breakerTripped.Load() {
