@@ -122,7 +122,7 @@ func canSendAs(addresser string) bool {
 func recordApiMailLog(ctx context.Context, apiTemplate *entity.ApiTemplates, recipient, addresser string, attribs map[string]string) error {
 	if !canSendAs(addresser) {
 		return gerror.New(public.LangCtx(ctx,
-			"Sender {} cannot send: no SES account is mapped to its domain and it has no active local mailbox", addresser))
+			"Sender {} is not able to send: no delivery service is configured for its domain and it has no active local mailbox", addresser))
 	}
 
 	// Message-ID only -- no SMTP connection needed. Building a sender here

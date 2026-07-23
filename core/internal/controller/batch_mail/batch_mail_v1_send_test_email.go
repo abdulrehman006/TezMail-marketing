@@ -112,9 +112,12 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 	// Silently falling back to Postfix here would report "sent successfully" for a test whose
 	// entire purpose is to prove the SES path works, so surface the real AWS error instead.
 	if !sentViaSES && sesErr != nil {
+		// Full provider detail goes to the log for diagnosis; the operator sees
+		// a message that names the problem without naming the vendor.
 		g.Log().Error(ctx, "[SES] test email: account is configured for", req.Addresser, "but the send failed:", sesErr)
 		res.Code = 500
-		res.SetError(gerror.New(public.LangCtx(ctx, "SES API send failed: {}", sesErr.Error())))
+		res.SetError(gerror.New(public.LangCtx(ctx,
+			"The sending service rejected this message: {}", sesErr.Error())))
 		return
 	}
 
@@ -131,7 +134,7 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 	// Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
 		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] SendTestEmail: BLOCKED - local SMTP disabled, no SES for", req.Addresser)
-		res.SetError(gerror.New(public.LangCtx(ctx, "Local SMTP is disabled and no SES configured for this domain")))
+		res.SetError(gerror.New(public.LangCtx(ctx, "No delivery service is available for this domain: local SMTP is disabled and no external sending service is configured")))
 		return
 	}
 	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] SendTestEmail: ALLOWED - falling back to SMTP for", req.Addresser, "→", req.Recipient)

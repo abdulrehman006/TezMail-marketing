@@ -63,15 +63,21 @@ func TestDescribeQuotaShortfall_IsActionable(t *testing.T) {
 	msg := DescribeQuotaShortfall(q, 12000)
 
 	// The operator needs all four numbers to decide what to do, plus a route
-	// out. A message saying only "quota exceeded" forces them into the AWS
-	// console to find out how bad it is.
+	// out. A message saying only "limit reached" forces them to go digging.
 	for _, want := range []string{"12000", "3000", "50000", "47000"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("shortfall message is missing %q: %s", want, msg)
 		}
 	}
-	if !strings.Contains(strings.ToLower(msg), "aws console") {
-		t.Error("shortfall message should point at the remedy")
+	if !strings.Contains(strings.ToLower(msg), "reduce the recipient list") {
+		t.Error("shortfall message should point at a remedy the operator can act on")
+	}
+
+	// Provider-neutral: people running campaigns should not see vendor names.
+	for _, forbidden := range []string{"SES", "AWS", "Amazon"} {
+		if strings.Contains(msg, forbidden) {
+			t.Errorf("shortfall message leaks the provider name %q: %s", forbidden, msg)
+		}
 	}
 }
 

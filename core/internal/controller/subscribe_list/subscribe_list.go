@@ -212,7 +212,7 @@ func SendMail(ctx context.Context, emailHtml, email, subject, confirmUrl string)
 	// 7. Fall back to SMTP if enabled
 	if !mail_service.IsLocalSMTPEnabled() {
 		g.Log().Warning(ctx, "[LOCAL-SMTP-GUARD] subscribe_list: BLOCKED - local SMTP disabled, no SES for", address)
-		return gerror.New(public.LangCtx(ctx, "Local SMTP is disabled and no SES configured"))
+		return gerror.New(public.LangCtx(ctx, "No delivery service is available: local SMTP is disabled and no external sending service is configured"))
 	}
 	g.Log().Info(ctx, "[LOCAL-SMTP-GUARD] subscribe_list: ALLOWED - falling back to SMTP for", address, "→", email)
 	sender, err := mail_service.NewEmailSenderWithLocal(address)

@@ -1683,11 +1683,16 @@ func (e *TaskExecutor) tripCircuitBreaker(ctx context.Context, cause error) {
 		return
 	}
 
-	reason := "SES account cannot send"
+	// The reason is stored against the task and shown to whoever is running the
+	// campaign, so it stays provider-neutral and free of raw API errors. The
+	// underlying cause is logged in full for whoever has to diagnose it.
 	if cause != nil {
-		reason = "Campaign paused automatically: the SES account cannot currently send. " +
-			truncateUTF8(cause.Error(), 400)
+		g.Log().Errorf(ctx, "task %d: pausing, sending service reported: %v", taskId, cause)
 	}
+
+	reason := "Campaign paused automatically: the sending service is currently unable to accept mail. " +
+		"No recipients have been lost -- the campaign will continue from where it stopped when you resume it. " +
+		"Check the sending settings, then resume."
 
 	if pauseErr := PauseTaskWithReason(ctx, taskId, reason); pauseErr != nil {
 		g.Log().Errorf(ctx, "task %d: failed to pause after an account-level block: %v", taskId, pauseErr)

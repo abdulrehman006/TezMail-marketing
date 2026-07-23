@@ -90,7 +90,7 @@ func (c *ControllerV1) ApiMailBatchSend(ctx context.Context, req *v1.ApiMailBatc
 	if !canSendAs(addresser) {
 		res.Code = 1006
 		res.SetError(gerror.New(public.LangCtx(ctx,
-			"Sender {} cannot send: no SES account is mapped to its domain and it has no active local mailbox", addresser)))
+			"Sender {} is not able to send: no delivery service is configured for its domain and it has no active local mailbox", addresser)))
 		return res, nil
 	}
 

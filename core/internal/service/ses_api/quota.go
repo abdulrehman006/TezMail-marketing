@@ -91,10 +91,16 @@ func CheckSendQuota(ctx context.Context, senderEmail string) (*QuotaStatus, erro
 // DescribeQuotaShortfall renders an operator-facing explanation of why a
 // campaign cannot start. Kept here so the wording stays consistent wherever it
 // surfaces.
+//
+// Deliberately provider-neutral. This text reaches people running campaigns,
+// who neither know nor need to know which delivery service sits underneath --
+// naming it only invites questions the campaign screen cannot answer. Provider
+// specifics belong in the logs and on the settings screen, where an
+// administrator is configuring the account.
 func DescribeQuotaShortfall(q *QuotaStatus, needed int) string {
 	return fmt.Sprintf(
-		"SES daily quota is insufficient: this campaign needs %d message(s) but only %.0f remain "+
+		"Daily sending limit reached: this campaign needs %d message(s) but only %.0f remain "+
 			"in the current 24-hour window (limit %.0f, already sent %.0f). "+
-			"Wait for the window to roll, request a higher limit in the AWS console, or reduce the recipient list.",
+			"Wait for the limit to reset, request a higher sending limit, or reduce the recipient list.",
 		needed, q.Remaining(), q.Max24HourSend, q.SentLast24Hours)
 }
