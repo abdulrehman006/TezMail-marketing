@@ -58,44 +58,52 @@ func TestQuotaStatus_NilIsTreatedAsUnconstrained(t *testing.T) {
 	}
 }
 
-func TestDescribeQuotaShortfall_IsActionable(t *testing.T) {
-	q := &QuotaStatus{Max24HourSend: 50000, SentLast24Hours: 47000}
-	msg := DescribeQuotaShortfall(q, 12000)
-
-	// The operator needs all four numbers to decide what to do, plus a route
-	// out. A message saying only "limit reached" forces them to go digging.
-	for _, want := range []string{"12000", "3000", "50000", "47000"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("shortfall message is missing %q: %s", want, msg)
-		}
-	}
-	if !strings.Contains(strings.ToLower(msg), "reduce the recipient list") {
-		t.Error("shortfall message should point at a remedy the operator can act on")
+func TestQuotaGate_HybridBoundary(t *testing.T) {
+	// The hybrid policy: block ONLY when there is no quota left at all. Any
+	// positive remaining lets the campaign start -- it sends what fits and the
+	// circuit breaker pauses the overflow. This is the exact comparison the
+	// pre-flight gate uses (quota.Remaining() > 0 -> allow).
+	allowed := func(q *QuotaStatus) bool {
+		return q.Remaining() > 0
 	}
 
-	// Provider-neutral: people running campaigns should not see vendor names.
-	for _, forbidden := range []string{"SES", "AWS", "Amazon"} {
-		if strings.Contains(msg, forbidden) {
-			t.Errorf("shortfall message leaks the provider name %q: %s", forbidden, msg)
-		}
+	cases := []struct {
+		name string
+		q    *QuotaStatus
+		want bool
+	}{
+		{"room to spare", &QuotaStatus{Max24HourSend: 50000, SentLast24Hours: 10000}, true},
+		{"one message left", &QuotaStatus{Max24HourSend: 1000, SentLast24Hours: 999}, true},
+		{"a huge campaign with a little quota still starts", &QuotaStatus{Max24HourSend: 50000, SentLast24Hours: 49000}, true},
+		{"exactly exhausted -> block", &QuotaStatus{Max24HourSend: 200, SentLast24Hours: 200}, false},
+		{"over quota -> block", &QuotaStatus{Max24HourSend: 200, SentLast24Hours: 250}, false},
+		{"unlimited account -> always allowed", &QuotaStatus{Max24HourSend: -1, SentLast24Hours: 900000, Unlimited: true}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := allowed(tc.q); got != tc.want {
+				t.Errorf("allowed=%v, want %v (remaining=%.0f)", got, tc.want, tc.q.Remaining())
+			}
+		})
 	}
 }
 
-func TestQuotaGate_DecisionBoundary(t *testing.T) {
-	// The exact comparison used before a campaign starts.
-	allowed := func(q *QuotaStatus, needed int) bool {
-		return q.Remaining() >= float64(needed)
-	}
+func TestDescribeQuotaExhausted_IsActionableAndNeutral(t *testing.T) {
+	q := &QuotaStatus{Max24HourSend: 50000, SentLast24Hours: 50000}
+	msg := DescribeQuotaExhausted(q)
 
-	q := &QuotaStatus{Max24HourSend: 1000, SentLast24Hours: 900} // 100 left
-
-	if !allowed(q, 100) {
-		t.Error("a campaign that exactly fits the remaining quota should be allowed")
+	if !strings.Contains(msg, "50000") {
+		t.Errorf("exhausted message should state the limit: %s", msg)
 	}
-	if allowed(q, 101) {
-		t.Error("a campaign one over the remaining quota must be refused")
+	// Must not promise auto-resume, which the system does not do.
+	if strings.Contains(strings.ToLower(msg), "automatically") {
+		t.Errorf("message must not imply auto-resume: %s", msg)
 	}
-	if !allowed(q, 0) {
-		t.Error("an empty campaign should never be blocked on quota")
+	// Provider-neutral, like the shortfall message.
+	for _, forbidden := range []string{"SES", "AWS", "Amazon"} {
+		if strings.Contains(msg, forbidden) {
+			t.Errorf("message leaks provider name %q: %s", forbidden, msg)
+		}
 	}
 }

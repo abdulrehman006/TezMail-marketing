@@ -308,16 +308,6 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		e.isPaused.Store(true)
 	}
 
-	// Pre-flight: refuse to start if the SES account cannot cover this campaign.
-	//
-	// Without this, a campaign larger than the remaining daily quota starts
-	// happily, sends until the allowance runs out, and then produces one 429
-	// per remaining recipient. Checking once up front turns thousands of
-	// failures into a single actionable message, before any mail is attempted.
-	if err := e.checkSendQuotaBeforeStart(ctx, taskId, task); err != nil {
-		return err
-	}
-
 	// check campaign warmup association and determine warmup identity
 	warmupAssociated := false
 	var warmupIdentity string
@@ -349,6 +339,16 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 
 	e.ctx = context.WithValue(e.ctx, "warmupAssociated", warmupAssociated)
 	e.ctx = context.WithValue(e.ctx, "warmupIdentity", warmupIdentity)
+
+	// Pre-flight: refuse to start only when the SES account cannot make any
+	// progress at all (daily quota fully exhausted). A campaign that can send
+	// *some* mail today is allowed to start -- it sends what the quota allows
+	// and the circuit breaker pauses the remainder for when the window rolls.
+	// Runs after the warmup determination so it can skip warmup campaigns,
+	// which pace themselves within quota by design.
+	if err := e.checkSendQuotaBeforeStart(ctx, taskId, task, warmupAssociated); err != nil {
+		return err
+	}
 
 	// configure rate controller
 	e.configureRateController(task)
@@ -1712,42 +1712,41 @@ func (e *TaskExecutor) tripCircuitBreaker(ctx context.Context, cause error) {
 	e.isPaused.Store(true)
 }
 
-// checkSendQuotaBeforeStart pauses the task if its SES account does not have
-// enough daily quota left to cover the recipients still waiting.
+// checkSendQuotaBeforeStart refuses to start a campaign only when its SES
+// account has NO daily quota left -- i.e. it could not send a single message
+// this run. A campaign that can send some mail today is allowed to start; it
+// sends what the quota allows and the circuit breaker pauses the remainder for
+// when the 24-hour window rolls.
 //
-// Returns a non-nil error only when the task must not proceed. The task is
-// paused rather than failed, so every unsent recipient stays at is_sent=0 and
-// the campaign resumes untouched once the 24-hour window rolls or the limit is
-// raised.
+// This is the deliberate "hybrid" policy. Blocking a campaign merely because it
+// will not FULLY fit today would send nothing when it could send most, and
+// would wrongly pause warmup campaigns whose total always exceeds one day's
+// quota by design. The breaker already degrades gracefully on mid-send
+// exhaustion, so the pre-flight check only needs to catch the doomed-from-the-
+// start case: zero remaining quota.
 //
-// Fails OPEN in two cases, both deliberate:
-//   - the domain has no SES account, so there is no quota to check and the send
-//     goes via SMTP anyway
-//   - the quota lookup itself failed, e.g. AWS unreachable. Refusing to send
-//     because we could not ask about the quota would turn a monitoring blip
-//     into an outage, and the send path still handles a real rejection.
-func (e *TaskExecutor) checkSendQuotaBeforeStart(ctx context.Context, taskId int, task *entity.EmailTask) error {
-	// Count only recipients that are actually DUE right now -- the exact
-	// population the send loop will attempt this run (getNextRecipientBatch
-	// filters is_sent=0 AND sent_time <= now). Counting all is_sent=0 rows was
-	// wrong in two ways:
-	//
-	//   - Warmup and retry-backoff park large numbers of recipients at
-	//     is_sent=0 with sent_time days in the future. Counting them against a
-	//     single day's remaining quota made the gate pause warmup campaigns
-	//     that would have paced safely -- defeating the warmup subsystem it
-	//     shares a codebase with.
-	//   - A campaign whose recipients are all deferred (fully warmup-paced, or
-	//     all in backoff) would report pending > 0 on every 5s scheduler
-	//     relaunch, making a live AWS GetAccount call each time for a campaign
-	//     that is not going to send anything this run.
-	//
-	// With the sent_time filter, a campaign with nothing due counts 0 and
-	// returns below without touching AWS, and a warmup campaign is measured by
-	// the batch actually about to go out. Tomorrow's quota is a fresh
-	// allowance, so gating on the whole future campaign was never right anyway.
+// The task is paused, not failed, so unsent recipients stay at is_sent=0 and
+// the campaign resumes untouched. Returns a non-nil error only when the task
+// must not proceed.
+//
+// Skips entirely for:
+//   - warmup campaigns -- they pace themselves within quota, and their total
+//     legitimately exceeds a single day's allowance
+//   - domains with no SES account -- nothing to gate on; the send goes via SMTP
+//   - a failed quota lookup (AWS unreachable) -- refusing to send because we
+//     could not ASK about the quota would turn a monitoring blip into an
+//     outage, and the send path still handles a real rejection
+func (e *TaskExecutor) checkSendQuotaBeforeStart(ctx context.Context, taskId int, task *entity.EmailTask, warmupAssociated bool) error {
+	if warmupAssociated {
+		return nil
+	}
+
+	// Only look at recipients due right now (is_sent=0 AND sent_time <= now),
+	// matching getNextRecipientBatch. A campaign whose recipients are all
+	// deferred to the future has nothing to send this run, so it must not make
+	// a live AWS GetAccount call on every 5s scheduler relaunch.
 	now := time.Now().Unix()
-	pending, err := g.DB().Model("recipient_info").
+	dueNow, err := g.DB().Model("recipient_info").
 		Where("task_id", taskId).
 		Where("is_sent", 0).
 		Where("sent_time <= ?", now).
@@ -1756,7 +1755,7 @@ func (e *TaskExecutor) checkSendQuotaBeforeStart(ctx context.Context, taskId int
 		g.Log().Warningf(ctx, "task %d: could not count due recipients for the quota check: %v", taskId, err)
 		return nil
 	}
-	if pending == 0 {
+	if dueNow == 0 {
 		return nil
 	}
 
@@ -1770,15 +1769,18 @@ func (e *TaskExecutor) checkSendQuotaBeforeStart(ctx context.Context, taskId int
 		return nil
 	}
 
-	if quota.Remaining() >= float64(pending) {
-		g.Log().Infof(ctx, "task %d: SES quota check passed - %d pending, %.0f remaining in the 24h window",
-			taskId, pending, quota.Remaining())
+	// The hybrid boundary: block only when there is NO room at all. Any positive
+	// remaining means the campaign can make real progress today, so let it run
+	// and rely on the breaker for the overflow.
+	if quota.Remaining() > 0 {
+		g.Log().Infof(ctx, "task %d: SES quota check passed - %.0f remaining in the 24h window; the breaker will pause any overflow",
+			taskId, quota.Remaining())
 		return nil
 	}
 
-	reason := ses_api.DescribeQuotaShortfall(quota, pending)
+	reason := ses_api.DescribeQuotaExhausted(quota)
 	if pauseErr := PauseTaskWithReason(ctx, taskId, reason); pauseErr != nil {
-		g.Log().Errorf(ctx, "task %d: quota is insufficient but pausing failed: %v", taskId, pauseErr)
+		g.Log().Errorf(ctx, "task %d: quota is exhausted but pausing failed: %v", taskId, pauseErr)
 		return pauseErr
 	}
 	e.isPaused.Store(true)

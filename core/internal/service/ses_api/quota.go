@@ -88,19 +88,17 @@ func CheckSendQuota(ctx context.Context, senderEmail string) (*QuotaStatus, erro
 	return sender.GetQuota(ctx)
 }
 
-// DescribeQuotaShortfall renders an operator-facing explanation of why a
-// campaign cannot start. Kept here so the wording stays consistent wherever it
-// surfaces.
+// DescribeQuotaExhausted explains that the daily sending allowance is fully
+// used, so the campaign cannot start yet. Used by the pre-flight check, which
+// blocks only at zero remaining -- a campaign that can send anything at all is
+// allowed to run and the breaker handles the overflow.
 //
-// Deliberately provider-neutral. This text reaches people running campaigns,
-// who neither know nor need to know which delivery service sits underneath --
-// naming it only invites questions the campaign screen cannot answer. Provider
-// specifics belong in the logs and on the settings screen, where an
-// administrator is configuring the account.
-func DescribeQuotaShortfall(q *QuotaStatus, needed int) string {
+// Deliberately does not promise auto-resume: a paused campaign is restarted by
+// the operator, not automatically when the window rolls.
+func DescribeQuotaExhausted(q *QuotaStatus) string {
 	return fmt.Sprintf(
-		"Daily sending limit reached: this campaign needs %d message(s) but only %.0f remain "+
-			"in the current 24-hour window (limit %.0f, already sent %.0f). "+
-			"Wait for the limit to reset, request a higher sending limit, or reduce the recipient list.",
-		needed, q.Remaining(), q.Max24HourSend, q.SentLast24Hours)
+		"Daily sending limit reached: none of the %.0f-message daily allowance remains in the "+
+			"current 24-hour window (already sent %.0f). The campaign has been paused with no "+
+			"messages sent. Resume it after the limit resets, or request a higher sending limit.",
+		q.Max24HourSend, q.SentLast24Hours)
 }

@@ -94,6 +94,62 @@ func TestRetryDecision_MatchesPolicy(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Pre-flight quota gate (option C: hybrid)
+// ---------------------------------------------------------------------------
+
+// TestQuotaGate_HybridDecision mirrors the exact branch order of
+// checkSendQuotaBeforeStart. The gate blocks a campaign ONLY when it is not a
+// warmup campaign, has recipients due now, and has zero remaining quota. Any
+// other combination lets it start -- the circuit breaker handles overflow.
+func TestQuotaGate_HybridDecision(t *testing.T) {
+	// decide returns "start" or "block" using the same logic as the gate.
+	// remaining < 0 models "no SES account / lookup failed" (fail open).
+	decide := func(warmup bool, dueNow int, remaining float64) string {
+		if warmup {
+			return "start" // warmup paces itself; skip the gate
+		}
+		if dueNow == 0 {
+			return "start" // nothing due this run; no AWS call, no block
+		}
+		if remaining < 0 {
+			return "start" // no account or lookup failed -> fail open
+		}
+		if remaining > 0 {
+			return "start" // some quota -> run, breaker handles overflow
+		}
+		return "block" // zero remaining and work to do -> pause
+	}
+
+	const noAccount = -1.0
+
+	cases := []struct {
+		name      string
+		warmup    bool
+		dueNow    int
+		remaining float64
+		want      string
+	}{
+		{"warmup campaign always starts, even at zero quota", true, 5000, 0, "start"},
+		{"warmup with huge list and tiny quota still starts", true, 50000, 100, "start"},
+		{"non-warmup, plenty of quota", false, 50000, 45000, "start"},
+		{"non-warmup, huge list but some quota -> start (breaker handles rest)", false, 50000, 200, "start"},
+		{"non-warmup, one message of quota left", false, 50000, 1, "start"},
+		{"non-warmup, zero quota and work to do -> block", false, 50000, 0, "block"},
+		{"non-warmup, nothing due this run -> start (no gate)", false, 0, 0, "start"},
+		{"non-warmup, no SES account -> fail open", false, 50000, noAccount, "start"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := decide(tc.warmup, tc.dueNow, tc.remaining); got != tc.want {
+				t.Errorf("decide(warmup=%v, due=%d, remaining=%.0f) = %s, want %s",
+					tc.warmup, tc.dueNow, tc.remaining, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Circuit breaker routing
 // ---------------------------------------------------------------------------
 
