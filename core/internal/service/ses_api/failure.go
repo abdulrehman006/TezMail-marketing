@@ -267,3 +267,57 @@ func IsRetryable(err error) bool {
 func IsAccountBlocked(err error) bool {
 	return ClassifyFailure(err) == FailureAccountBlocked
 }
+
+// IsCredentialFailure reports whether the error means the ACCOUNT itself is
+// broken and will keep failing until an operator fixes it -- revoked or wrong
+// credentials, an expired token, or a suspended/paused account.
+//
+// This is narrower than IsAccountBlocked on purpose. It deliberately EXCLUDES:
+//   - daily-quota exhaustion, which is temporary and clears when the window
+//     rolls -- marking the account "failed" for that would wrongly stop routing
+//     to it for the rest of the day
+//   - MailFromDomainNotVerified, which is a per-domain configuration problem,
+//     not a broken account -- other domains on the account may send fine
+//
+// Used to decide whether to flip an account's stored status to "failed" so the
+// UI stops showing it green and routing stops using it. Periodic
+// re-verification restores it automatically once the credentials are fixed, so
+// a transient AccessDenied that clears is self-healing within one verification
+// interval.
+func IsCredentialFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var suspended *types.AccountSuspendedException
+	var paused *types.SendingPausedException
+	if errors.As(err, &suspended) || errors.As(err, &paused) {
+		return true
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "InvalidClientTokenId", "SignatureDoesNotMatch", "UnrecognizedClientException",
+			"InvalidSignatureException", "AccessDenied", "AccessDeniedException",
+			"ExpiredTokenException", "MissingAuthenticationToken":
+			return true
+		}
+	}
+
+	msg := err.Error()
+	for _, marker := range []string{
+		"InvalidClientTokenId",
+		"SignatureDoesNotMatch",
+		"UnrecognizedClientException",
+		"ExpiredToken",
+		"not authorized to perform",
+		"Account is paused",
+		"account is suspended",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}

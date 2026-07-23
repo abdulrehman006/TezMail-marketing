@@ -243,6 +243,61 @@ func TestClassifyFailure_TypedExceptionThroughWrappers(t *testing.T) {
 	}
 }
 
+func TestIsCredentialFailure(t *testing.T) {
+	// TRUE: the account itself is broken and stays broken until fixed.
+	broken := []error{
+		&types.AccountSuspendedException{},
+		&types.SendingPausedException{},
+		errors.New("InvalidClientTokenId: The security token is invalid"),
+		errors.New("SignatureDoesNotMatch: Signature expired"),
+		errors.New("ExpiredToken: the security token has expired"),
+		errors.New("User is not authorized to perform ses:SendEmail"),
+	}
+	for _, err := range broken {
+		if !IsCredentialFailure(err) {
+			t.Errorf("%v should be a credential failure", err)
+		}
+	}
+
+	// FALSE: not a broken account, so must NOT flip the account to failed.
+	notBroken := []error{
+		nil,
+		// Daily quota is temporary -- disabling the account for it would stop
+		// routing for the rest of the day.
+		&types.TooManyRequestsException{Message: strPtr("Daily message quota exceeded")},
+		// Per-second rate is transient.
+		&types.TooManyRequestsException{Message: strPtr("Maximum sending rate exceeded")},
+		// A per-domain config problem, not an account problem.
+		&types.MailFromDomainNotVerifiedException{},
+		// A per-message rejection.
+		&types.MessageRejected{},
+		// An ordinary network blip.
+		errors.New("connection refused"),
+	}
+	for _, err := range notBroken {
+		if IsCredentialFailure(err) {
+			t.Errorf("%v must NOT be treated as a credential failure", err)
+		}
+	}
+}
+
+func TestIsCredentialFailure_NarrowerThanAccountBlocked(t *testing.T) {
+	// Every credential failure is also account-blocked, but not vice versa --
+	// daily quota is account-blocked yet must not be a credential failure.
+	quota := &types.TooManyRequestsException{Message: strPtr("Daily message quota exceeded")}
+	if !IsAccountBlocked(quota) {
+		t.Fatal("precondition: daily quota should be account-blocked")
+	}
+	if IsCredentialFailure(quota) {
+		t.Error("daily quota is account-blocked but must not be a credential failure")
+	}
+
+	creds := errors.New("InvalidClientTokenId: bad key")
+	if !IsAccountBlocked(creds) || !IsCredentialFailure(creds) {
+		t.Error("a credential error should be both account-blocked and a credential failure")
+	}
+}
+
 func TestFailureKind_StringsAreDistinct(t *testing.T) {
 	seen := map[string]bool{}
 	for _, k := range []FailureKind{FailurePermanent, FailureTransient, FailureAccountBlocked} {

@@ -224,14 +224,13 @@ func getVerifiedDomains(ctx context.Context, client *sesv2.Client) ([]string, er
 
 // StartPeriodicVerification starts a goroutine that periodically verifies all accounts
 func StartPeriodicVerification(ctx context.Context) {
-	config := GetConfig()
-	if config == nil {
-		return
-	}
-
-	interval := config.CheckIntervalMinutes
-	if interval <= 0 {
-		interval = 5 // Default to 5 minutes
+	// Do NOT bail when the file config is absent. The standard setup stores
+	// accounts in the database, not the JSON file, so returning here on nil
+	// config was exactly why DB accounts were never re-verified -- a revoked
+	// key left them "connected" forever.
+	interval := 5 // minutes
+	if config := GetConfig(); config != nil && config.CheckIntervalMinutes > 0 {
+		interval = config.CheckIntervalMinutes
 	}
 
 	ticker := time.NewTicker(time.Duration(interval) * time.Minute)
@@ -242,7 +241,8 @@ func StartPeriodicVerification(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			VerifyAllAccounts(ctx)
+			VerifyAllAccounts(ctx)     // legacy file-config accounts
+			VerifyAllAccountsInDB(ctx) // standard DB-backed accounts
 		case <-ctx.Done():
 			g.Log().Info(ctx, "SES periodic verification stopped")
 			return

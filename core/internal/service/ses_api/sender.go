@@ -257,15 +257,25 @@ func (s *SESSender) buildRawMessage(ctx context.Context, input *SendEmailInput) 
 
 // handleSendError handles send errors and updates account status if needed
 func (s *SESSender) handleSendError(ctx context.Context, err error) {
+	// Only flag the account when the failure means the account itself is broken
+	// -- revoked credentials, expired token, suspension. IsCredentialFailure
+	// excludes daily-quota (temporary) and domain-not-verified (per-domain), so
+	// those do not wrongly disable the whole account. The previous substring
+	// check on "AccessDenied" alone was both too broad and DB-blind.
+	if !IsCredentialFailure(err) {
+		return
+	}
+
 	errStr := err.Error()
 
-	// Check for credential errors
-	if strings.Contains(errStr, "InvalidClientTokenId") ||
-		strings.Contains(errStr, "SignatureDoesNotMatch") ||
-		strings.Contains(errStr, "AccessDenied") {
-		// Update account status to failed
-		_ = UpdateAccountStatus(s.accountName, StatusFailed, errStr, nil, nil)
-	}
+	// Legacy file-config path -- a no-op for DB-backed accounts, which is why
+	// this used to silently do nothing for the standard setup.
+	_ = UpdateAccountStatus(s.accountName, StatusFailed, errStr, nil, nil)
+
+	// DB-backed path -- the standard case. Flips the stored status so the UI
+	// stops showing the account green and routing stops using it; periodic
+	// re-verification restores it once the credentials are fixed.
+	_ = MarkDBAccountFailedByName(ctx, s.accountName, errStr)
 }
 
 // encodeSubject encodes a subject for use in a MIME header (RFC 2047).

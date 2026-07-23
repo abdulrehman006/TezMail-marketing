@@ -277,6 +277,90 @@ func UpdateAccountStatusInDB(ctx context.Context, id int64, status string, messa
 	return err
 }
 
+// MarkDBAccountFailedByName flips a DB-backed account to StatusFailed when a
+// send reveals its credentials are broken.
+//
+// Keyed by name because the send path only knows the account name, not its id.
+// The `status != failed` guard makes concurrent callers idempotent: during a
+// campaign many workers can hit the same credential error at once, but only the
+// first write lands and only it invalidates the cache -- the rest match no rows.
+//
+// A no-op (0 rows) for file-config accounts, which are not in bm_ses_accounts;
+// those are handled by UpdateAccountStatus.
+func MarkDBAccountFailedByName(ctx context.Context, name, message string) error {
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	result, err := g.DB().Model("bm_ses_accounts").
+		Where("name", name).
+		Where("status != ?", StatusFailed).
+		Data(g.Map{
+			"status":         StatusFailed,
+			"status_message": message,
+			"updated_at":     time.Now(),
+		}).
+		Update()
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n > 0 {
+		InvalidateAccountCache()
+		g.Log().Warningf(ctx, "[SES] account %q marked failed after a credential error; it will be re-verified automatically once fixed: %s", name, message)
+	}
+	return nil
+}
+
+// VerifyAllAccountsInDB re-verifies every enabled DB-backed account against AWS.
+//
+// This is what keeps a DB account's stored status honest after creation. Without
+// it, a revoked key leaves the account "connected" forever. Skips accounts
+// verified within the last two minutes so it does not repeat work a recent save
+// already did, and skips those mid-verification.
+//
+// Each VerifyAccountByID makes a live GetAccount call, which AWS throttles to 1
+// request/second per account, so this deliberately runs serially on a periodic
+// tick rather than in parallel.
+func VerifyAllAccountsInDB(ctx context.Context) {
+	var rows []struct {
+		Id           int64  `orm:"id"`
+		Status       string `orm:"status"`
+		LastVerified string `orm:"last_verified"`
+	}
+	if err := g.DB().Model("bm_ses_accounts").
+		Where("enabled", 1).
+		Fields("id, status, last_verified").
+		Scan(&rows); err != nil {
+		sesErrorf(ctx, "could not list DB accounts for re-verification: %v", err)
+		return
+	}
+
+	for _, r := range rows {
+		if r.Status == StatusChecking {
+			continue // a verification is already in flight for this account
+		}
+		if r.Status == StatusConnected && recentlyVerified(r.LastVerified) {
+			continue // fresh enough; do not burn a GetAccount call
+		}
+		if err := VerifyAccountByID(ctx, r.Id); err != nil {
+			sesTracef(ctx, "re-verification of account id=%d failed (will retry next tick): %v", r.Id, err)
+		}
+	}
+}
+
+// recentlyVerified reports whether a stored last_verified timestamp is within
+// the last two minutes.
+func recentlyVerified(lastVerified string) bool {
+	if lastVerified == "" {
+		return false
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339} {
+		if t, err := time.Parse(layout, lastVerified); err == nil {
+			return time.Since(t) < 2*time.Minute
+		}
+	}
+	return false
+}
+
 func getAccountDomains(ctx context.Context, accountId int64) ([]string, error) {
 	var domains []string
 	result, err := g.DB().Model("bm_ses_domain_mapping").Where("account_id", accountId).All()
