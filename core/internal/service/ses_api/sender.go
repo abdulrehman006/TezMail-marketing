@@ -137,8 +137,16 @@ func (s *SESSender) SendEmail(ctx context.Context, input *SendEmailInput) *SendE
 		sendInput.ReplyToAddresses = input.ReplyTo
 	}
 
+	// Bound each send with its own deadline. The caller passes the long-lived
+	// campaign context, which has no per-request timeout, so a half-open socket
+	// or a stall mid-body could otherwise block a worker for a very long time
+	// instead of failing fast and being retried. 30s is comfortably longer than
+	// a healthy SendEmail round-trip.
+	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	// Send email
-	result, err := s.client.SendEmail(ctx, sendInput)
+	result, err := s.client.SendEmail(sendCtx, sendInput)
 	if err != nil {
 		output.Error = fmt.Errorf("SES API error: %w", err)
 		g.Log().Error(ctx, "SES SendEmail failed:", err)
@@ -155,6 +163,23 @@ func (s *SESSender) SendEmail(ctx context.Context, input *SendEmailInput) *SendE
 	g.Log().Debug(ctx, "SES email sent successfully, MessageID:", output.MessageID)
 
 	return output
+}
+
+// reservedRawHeaders are the headers buildRawMessage emits itself, so a caller
+// must not also supply them via SendEmailInput.Headers.
+var reservedRawHeaders = map[string]bool{
+	"message-id":                true,
+	"from":                      true,
+	"to":                        true,
+	"subject":                   true,
+	"date":                      true,
+	"mime-version":              true,
+	"content-type":              true,
+	"content-transfer-encoding": true,
+}
+
+func isReservedRawHeader(key string) bool {
+	return reservedRawHeaders[strings.ToLower(strings.TrimSpace(key))]
 }
 
 // writeHeader appends one header field, dropping it if the value cannot be
@@ -197,8 +222,17 @@ func (s *SESSender) buildRawMessage(ctx context.Context, input *SendEmailInput) 
 
 	builder.WriteString("MIME-Version: 1.0\r\n")
 
-	// Add custom headers
+	// Add custom headers, skipping any that this function already emits.
+	// buildRawMessage writes Message-ID, From, To, Subject, Date, MIME-Version
+	// and Content-* itself; if a caller also passed one of those in Headers we
+	// would emit it twice and produce a malformed message some receivers
+	// reject. Today only List-Unsubscribe headers are passed, but the map is a
+	// public field, so guard the surface rather than trust every caller.
 	for key, value := range input.Headers {
+		if isReservedRawHeader(key) {
+			sesWarnf(ctx, "ignoring caller-supplied reserved header %q; it is set by the message builder", key)
+			continue
+		}
 		s.writeHeader(ctx, &builder, key, value)
 	}
 

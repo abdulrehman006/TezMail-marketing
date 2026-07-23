@@ -200,6 +200,7 @@ func TestClassifyFailure_MessageLevelStaysPermanent(t *testing.T) {
 	cases := []error{
 		&types.BadRequestException{},
 		&types.NotFoundException{},
+		&types.MessageRejected{}, // typed: invalid content / virus -> don't retry
 		errors.New("MessageRejected: Email address is not verified"),
 	}
 

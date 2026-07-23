@@ -180,7 +180,11 @@ func GetAccountForDomainFromDB(ctx context.Context, senderEmail string) (*Accoun
 
 	// extractDomain already lowercases, so compare case-insensitively: a domain saved as
 	// "Example.com" through the UI would otherwise never match sender "user@example.com".
-	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").Where("LOWER(TRIM(domain)) = ?", domain).One()
+	// ORDER BY id so that if legacy mixed-case duplicate rows exist (from before
+	// write-side normalisation), the same one is chosen every time rather than
+	// whatever the DB returns first.
+	mapping, err := g.DB().Ctx(ctx).Model("bm_ses_domain_mapping").
+		Where("LOWER(TRIM(domain)) = ?", domain).Order("id ASC").One()
 	if err != nil {
 		sesErrorf(ctx, "domain mapping query failed for %q: %v", domain, err)
 		return nil, err
@@ -292,7 +296,13 @@ func updateAccountDomains(ctx context.Context, accountId int64, domains []string
 	}
 
 	for _, domain := range domains {
-		domain = strings.TrimSpace(domain)
+		// Store normalised (lower-cased, trimmed). The read side matches with
+		// LOWER(TRIM(domain)), and extractDomain lower-cases the sender, so
+		// storing as-typed let "Example.com" and "example.com" coexist as
+		// separate rows on different accounts -- and the read then picked one
+		// nondeterministically. Normalising on write makes UNIQUE(domain) do
+		// its job and keeps routing deterministic.
+		domain = strings.ToLower(strings.TrimSpace(domain))
 		if domain == "" {
 			continue
 		}

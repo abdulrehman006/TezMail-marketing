@@ -223,6 +223,69 @@ func TestBuildRawMessage_CustomHeaderValueCannotInject(t *testing.T) {
 	}
 }
 
+func TestBuildRawMessage_ReservedHeadersNotDuplicated(t *testing.T) {
+	// A caller that passes a header the builder already emits must not produce
+	// two of it -- duplicate Content-Type / Message-ID / From etc. is malformed
+	// MIME that some receivers reject.
+	s := newTestSender()
+	raw := s.buildRawMessage(context.Background(), &SendEmailInput{
+		From:      "sender@example.com",
+		To:        []string{"rcpt@example.com"},
+		Subject:   "Subject",
+		HtmlBody:  "<p>body</p>",
+		MessageID: "<real@example.com>",
+		Headers: map[string]string{
+			"Content-Type":     "text/plain",              // reserved -> must be ignored
+			"MIME-Version":     "9.9",                     // reserved -> ignored
+			"Message-ID":       "<injected@evil.test>",    // reserved -> ignored
+			"From":             "spoof@evil.test",         // reserved -> ignored
+			"List-Unsubscribe": "<https://x.test/u>",      // allowed -> kept
+		},
+	})
+
+	headers, _ := splitHeadersAndBody(t, raw)
+	count := func(prefix string) int {
+		n := 0
+		for _, h := range headers {
+			if strings.HasPrefix(strings.ToLower(h), strings.ToLower(prefix)) {
+				n++
+			}
+		}
+		return n
+	}
+
+	for _, reserved := range []string{"Content-Type:", "MIME-Version:", "Message-ID:", "From:"} {
+		if c := count(reserved); c != 1 {
+			t.Errorf("%s appears %d times, want exactly 1", reserved, c)
+		}
+	}
+	// The builder's own Message-ID and From must win, not the injected ones.
+	joined := strings.Join(headers, "\r\n")
+	if strings.Contains(joined, "injected@evil.test") {
+		t.Error("caller-supplied Message-ID overrode the real one")
+	}
+	if strings.Contains(joined, "spoof@evil.test") {
+		t.Error("caller-supplied From overrode the real sender")
+	}
+	// The non-reserved header survives.
+	if count("List-Unsubscribe:") != 1 {
+		t.Error("allowed custom header was dropped")
+	}
+}
+
+func TestIsReservedRawHeader(t *testing.T) {
+	for _, h := range []string{"Content-Type", "content-type", " Message-ID ", "FROM", "date"} {
+		if !isReservedRawHeader(h) {
+			t.Errorf("%q should be reserved", h)
+		}
+	}
+	for _, h := range []string{"List-Unsubscribe", "X-Custom", "Reply-To-ish"} {
+		if isReservedRawHeader(h) {
+			t.Errorf("%q should NOT be reserved", h)
+		}
+	}
+}
+
 func TestBuildRawMessage_HasRequiredHeaders(t *testing.T) {
 	s := newTestSender()
 	raw := s.buildRawMessage(context.Background(), &SendEmailInput{

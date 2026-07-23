@@ -157,9 +157,17 @@ func ClassifyFailure(err error) FailureKind {
 
 	var badRequest *types.BadRequestException
 	var notFound *types.NotFoundException
+	// MessageRejected means SES refused this specific message -- invalid
+	// content, a virus, or bad personalization. Retrying the identical message
+	// cannot help, so it must not sit in the retry loop burning three attempts.
+	// It is message-level, not account-level: a different recipient's
+	// personalised content may be fine, so the campaign keeps going.
+	var messageRejected *types.MessageRejected
 
 	switch {
-	case errors.As(err, &badRequest), errors.As(err, &notFound):
+	case errors.As(err, &badRequest),
+		errors.As(err, &notFound),
+		errors.As(err, &messageRejected):
 		return FailurePermanent
 	}
 

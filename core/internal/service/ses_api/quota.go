@@ -3,6 +3,7 @@ package ses_api
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 )
@@ -46,6 +47,10 @@ func (q *QuotaStatus) Remaining() float64 {
 // have run or wave through one that cannot. One API call per campaign start is
 // negligible.
 func (s *SESSender) GetQuota(ctx context.Context) (*QuotaStatus, error) {
+	// Bound the call so a stalled connection cannot hold up a campaign start.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
 	out, err := s.client.GetAccount(ctx, &sesv2.GetAccountInput{})
 	if err != nil {
 		return nil, fmt.Errorf("could not read SES quota for account %q: %w", s.accountName, err)
