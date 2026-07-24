@@ -9,6 +9,7 @@ import (
 	"billionmail-core/internal/controller/contact"
 	"billionmail-core/internal/controller/dockerapi"
 	"billionmail-core/internal/controller/domains"
+	"billionmail-core/internal/controller/email_media"
 	"billionmail-core/internal/controller/email_template"
 	"billionmail-core/internal/controller/files"
 	"billionmail-core/internal/controller/languages"
@@ -257,6 +258,7 @@ var (
 				group.Bind(
 					rbac.NewV1(),
 					domains.NewV1(),
+					email_media.NewV1(),
 					mail_boxes.NewV1(),
 					overview.NewV1(),
 					dockerapi.NewV1(),
@@ -368,6 +370,11 @@ var (
 			})
 
 			// Add static file handler
+			// Serve uploaded email images publicly at /media/<file> from the
+			// persistent core data dir (survives redeploys). No auth: email
+			// images must be reachable by recipients' mail clients.
+			s.AddStaticPath("/media", public.AbsPath("data/email-media"))
+
 			s.BindHandler("/*any", func(r *ghttp.Request) {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
 					r.Response.WriteHeader(404)

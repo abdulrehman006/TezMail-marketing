@@ -46,6 +46,7 @@ var segmentToModule = map[string]string{
 	"batch_mail":         "campaigns",
 	"subscription":       "campaigns",
 	"email_template":     "templates",
+	"email-media":        "templates",
 	"contact":            "contacts",
 	"tags":               "contacts",
 	"subscribe":          "contacts",
