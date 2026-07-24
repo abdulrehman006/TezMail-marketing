@@ -235,9 +235,19 @@ var (
 				// Add JWT middleware (authentication: sets accountId + roles)
 				group.Middleware(rbac2.JWT().JWTAuthMiddleware)
 
-				// Add RBAC middleware (authorization: per-module access control).
-				// Runs after JWT; the built-in admin role bypasses all checks.
-				group.Middleware(middlewares.NewRBACMiddleware().PermissionCheck)
+				// --- RBAC FEATURE FLAG ---------------------------------------
+				// The per-module authorization middleware is registered ONLY
+				// when the RBAC feature is enabled (RBAC_ENABLED=true in .env).
+				// When the feature is off it is never added, so the product
+				// behaves exactly as before — no gating and no per-request cost.
+				// It runs after JWT; the built-in admin role bypasses all checks.
+				if rbac2.IsEnabled() {
+					group.Middleware(middlewares.NewRBACMiddleware().PermissionCheck)
+					g.Log().Info(ctx, "[RBAC] feature ENABLED — per-module access control is active")
+				} else {
+					g.Log().Info(ctx, "[RBAC] feature disabled (set RBAC_ENABLED=true in .env to enable)")
+				}
+				// -------------------------------------------------------------
 
 				// group.Middleware(ghttp.MiddlewareHandlerResponse)
 

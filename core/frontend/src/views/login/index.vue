@@ -130,6 +130,7 @@ interface LoginResponse {
 	token: string
 	refresh_token: string
 	ttl: number
+	rbacEnabled?: boolean
 }
 
 const handleLogin = async () => {
@@ -142,6 +143,7 @@ const handleLogin = async () => {
 				token: res.token,
 				refresh_token: res.refresh_token,
 				ttl: res.ttl,
+				rbacEnabled: res.rbacEnabled, // RBAC feature flag from backend
 			})
 			// Load roles/permissions so the menu is correct before we navigate.
 			await userStore.fetchCurrentUser()

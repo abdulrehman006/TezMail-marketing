@@ -41,6 +41,12 @@ import (
 const e2eAddr = "127.0.0.1:18099"
 const e2eBase = "http://" + e2eAddr
 
+// A second server that mirrors production with the RBAC feature DISABLED — the
+// enforcement middleware is simply not registered. Used to prove OFF mode
+// applies no gating.
+const e2eOffAddr = "127.0.0.1:18100"
+const e2eOffBase = "http://" + e2eOffAddr
+
 var (
 	e2eAdminId    int64
 	e2eMailboxPid int64
@@ -142,14 +148,35 @@ func TestMain(m *testing.M) {
 	if err := s.Start(); err != nil {
 		panic("server start: " + err.Error())
 	}
-	waitReady()
+
+	// Second server = RBAC feature OFF: identical chain but WITHOUT the RBAC
+	// enforcement middleware (this is exactly what cmd.go does when
+	// RBAC_ENABLED is not set). Proves the feature is a clean no-op when off.
+	sOff := g.Server("rbac-e2e-off")
+	sOff.SetAddr(e2eOffAddr)
+	sOff.SetDumpRouterMap(false)
+	sOff.SetAccessLogEnabled(false)
+	sOff.Group("/api", func(group *ghttp.RouterGroup) {
+		group.Middleware(service.JWT().JWTAuthMiddleware)
+		// NOTE: no RBAC middleware here — this is the "feature disabled" chain.
+		group.Middleware(middlewares.HandleApiResponse)
+		group.Bind(NewV1())
+		group.GET("/mailbox/ping", func(r *ghttp.Request) { r.Response.WriteJson(g.Map{"success": true, "code": 0, "msg": "pong"}) })
+		group.GET("/domains/ping", func(r *ghttp.Request) { r.Response.WriteJson(g.Map{"success": true, "code": 0, "msg": "pong"}) })
+	})
+	if err := sOff.Start(); err != nil {
+		panic("off server start: " + err.Error())
+	}
+
+	waitReady(e2eAddr)
+	waitReady(e2eOffAddr)
 
 	os.Exit(m.Run())
 }
 
-func waitReady() {
+func waitReady(addr string) {
 	for i := 0; i < 100; i++ {
-		if c, err := net.Dial("tcp", e2eAddr); err == nil {
+		if c, err := net.Dial("tcp", addr); err == nil {
 			_ = c.Close()
 			time.Sleep(100 * time.Millisecond)
 			return
@@ -301,4 +328,79 @@ func toStrs(v interface{}) []string {
 		}
 	}
 	return out
+}
+
+// reqJSON is like doJSON but targets an explicit base URL (used to hit the
+// RBAC-OFF server as well as the enforced one).
+func reqJSON(base, method, path, token string, body interface{}) (int, map[string]interface{}) {
+	var buf io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		buf = bytes.NewReader(b)
+	}
+	req, _ := http.NewRequest(method, base+path, buf)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, nil
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	var mp map[string]interface{}
+	_ = json.Unmarshal(data, &mp)
+	return resp.StatusCode, mp
+}
+
+// TestE2E_RBACDisabled_NoEnforcement proves the OFF mode: with the enforcement
+// middleware absent (exactly what cmd.go does when RBAC_ENABLED is unset), a
+// user holding NO module permissions can still reach every gated route. The
+// same user is blocked on the enforced server — confirming the flag is the only
+// difference.
+func TestE2E_RBACDisabled_NoEnforcement(t *testing.T) {
+	ctx := context.Background()
+
+	// Earlier tests share the same client IP (127.0.0.1); a failed login there
+	// leaves a retry/captcha counter that would force a captcha here. Clear it
+	// so this test's logins aren't challenged (product behaviour, not RBAC).
+	for _, ip := range []string{"127.0.0.1", "::1"} {
+		public.RemoveCache("USER_LOGIN_RETRIES:" + ip)
+		public.RemoveCache("USER_LOGIN_RETRIES_RELEASE_TIME:" + ip)
+	}
+
+	roleId, _ := service.Role().Create(ctx, "nomodules", "grants nothing", 1)
+	uid, err := service.Account().Create(ctx, &model.Account{
+		Username: "nobody", Password: "nobody123", Email: "nobody@example.com", Status: 1, Language: "en",
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	_ = service.Account().BindRoles(ctx, uid, []int64{roleId})
+
+	// Log in against the RBAC-OFF server.
+	_, m := reqJSON(e2eOffBase, "POST", "/api/login", "", g.Map{"username": "nobody", "password": "nobody123"})
+	if m == nil || m["success"] != true {
+		t.Fatalf("login on OFF server failed: %v", m)
+	}
+	tok := m["data"].(map[string]interface{})["token"].(string)
+	// The login response should report the feature as disabled here — but note
+	// IsEnabled() is process-wide, so we only assert reachability below.
+
+	// With RBAC OFF, a permission-less user reaches every gated route.
+	for _, p := range []string{"/api/domains/ping", "/api/mailbox/ping", "/api/account/list"} {
+		if _, mm := reqJSON(e2eOffBase, "GET", p, tok, nil); mm["success"] != true {
+			t.Errorf("RBAC OFF: user should reach %s, got %v", p, mm)
+		}
+	}
+
+	// Sanity cross-check: the SAME user IS blocked on the enforced server.
+	_, m2 := reqJSON(e2eBase, "POST", "/api/login", "", g.Map{"username": "nobody", "password": "nobody123"})
+	tok2 := m2["data"].(map[string]interface{})["token"].(string)
+	if _, mm := reqJSON(e2eBase, "GET", "/api/domains/ping", tok2, nil); code(mm) != 403 {
+		t.Errorf("RBAC ON: same user should be 403 on /api/domains/ping, got %v", mm)
+	}
 }

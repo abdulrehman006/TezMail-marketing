@@ -27,6 +27,13 @@ export default defineStore(
 		// Logical module keys the user may access (menu/page gating).
 		const permissions = ref<string[]>([])
 
+		// --- RBAC FEATURE FLAG ---------------------------------------------
+		// Whether the RBAC feature is enabled on the backend. Set from the login
+		// and current-user responses. When false the app behaves as it did
+		// before RBAC: full menu, no gating, and the Accounts/Roles UI hidden.
+		const rbacEnabled = ref(false)
+		// -------------------------------------------------------------------
+
 		/**
 		 * @description Determine if the user is logged in
 		 */
@@ -40,20 +47,31 @@ export default defineStore(
 		const isAdmin = computed(() => roles.value.includes('admin'))
 
 		/**
-		 * @description Whether the user may access a logical module
+		 * @description Whether the user may access a logical module.
+		 * When the RBAC feature is OFF, everything is accessible (no gating) so
+		 * the menu is identical to the pre-RBAC product.
 		 * @param key module key, e.g. 'mailboxes'
 		 */
-		const hasModule = (key: string) => isAdmin.value || permissions.value.includes(key)
+		const hasModule = (key: string) =>
+			!rbacEnabled.value || isAdmin.value || permissions.value.includes(key)
 
 		/**
 		 * @description Set user login information
 		 * @param userVal
 		 */
-		const setLoginInfo = (userVal: { token: string; refresh_token: string; ttl: number }) => {
+		const setLoginInfo = (userVal: {
+			token: string
+			refresh_token: string
+			ttl: number
+			rbacEnabled?: boolean
+		}) => {
 			login.value.token = userVal.token
 			login.value.refresh_token = userVal.refresh_token
 			login.value.ttl = userVal.ttl
 			login.value.expire = userVal.ttl * 1000 + Date.now()
+			if (typeof userVal.rbacEnabled === 'boolean') {
+				rbacEnabled.value = userVal.rbacEnabled
+			}
 		}
 
 		/**
@@ -63,6 +81,7 @@ export default defineStore(
 			account?: { id: number; username: string; email: string }
 			roles?: string[]
 			permissions?: string[]
+			rbacEnabled?: boolean
 		}) => {
 			if (data.account) {
 				profile.value.id = data.account.id
@@ -71,6 +90,9 @@ export default defineStore(
 			}
 			roles.value = data.roles || []
 			permissions.value = data.permissions || []
+			if (typeof data.rbacEnabled === 'boolean') {
+				rbacEnabled.value = data.rbacEnabled
+			}
 		}
 
 		/**
@@ -97,6 +119,8 @@ export default defineStore(
 			profile.value = { id: 0, username: '', email: '' }
 			roles.value = []
 			permissions.value = []
+			// Keep rbacEnabled as last known so the login screen doesn't flicker;
+			// it is refreshed on the next successful login.
 		}
 
 		const logout = () => {
@@ -116,6 +140,7 @@ export default defineStore(
 			profile,
 			roles,
 			permissions,
+			rbacEnabled,
 			isLogin,
 			isAdmin,
 			hasModule,
@@ -128,7 +153,7 @@ export default defineStore(
 	},
 	{
 		persist: {
-			pick: ['login', 'roles', 'permissions', 'profile'],
+			pick: ['login', 'roles', 'permissions', 'profile', 'rbacEnabled'],
 		},
 	}
 )

@@ -83,15 +83,28 @@ const keyToModule: Record<string, string> = {
 	roles: 'system',
 }
 
-// 路由菜单 — hidden routes are dropped, and routes tied to an RBAC module the
-// current user cannot access are hidden too (the backend still enforces access;
-// this only keeps the menu clean). Routes with no known module stay visible.
+// The Accounts/Roles screens only exist as part of the RBAC feature.
+const rbacMenuKeys = ['accounts', 'roles']
+
+// 路由菜单 — hidden routes are dropped. When the RBAC feature is ON, the
+// Accounts/Roles items appear and routes are gated by the user's module access
+// (the backend still enforces access; this only keeps the menu clean). When the
+// RBAC feature is OFF, the Accounts/Roles items are hidden and NO gating is
+// applied, so the menu is identical to the pre-RBAC product.
 const routerMenus = computed(() => {
 	return menuStore.menuList.filter(route => {
 		if (!route.meta || route.meta.hidden) return false
 		const key = String(route.meta?.key || '')
-		const module = String(route.meta?.module || keyToModule[key] || '')
-		if (module && !userStore.hasModule(module)) return false
+
+		// --- RBAC FEATURE FLAG ---
+		// Hide the RBAC management screens entirely when the feature is off.
+		if (rbacMenuKeys.includes(key) && !userStore.rbacEnabled) return false
+		// Apply per-module menu gating only when the feature is on.
+		if (userStore.rbacEnabled) {
+			const module = String(route.meta?.module || keyToModule[key] || '')
+			if (module && !userStore.hasModule(module)) return false
+		}
+		// -------------------------
 		return true
 	})
 })

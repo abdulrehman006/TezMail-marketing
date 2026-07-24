@@ -172,21 +172,26 @@ func init() {
 			"role_id":    adminRoleId,
 		})
 
-		// Seed one permission per logical module (idempotent) and grant the
-		// full set to the admin role. The admin role also bypasses all checks
-		// in the middleware, but keeping the DB in sync means the role editor
-		// shows admin as fully-permissioned and the model degrades safely if
-		// the bypass is ever removed.
-		if err := rbac.SeedModulePermissions(context.Background()); err != nil {
-			g.Log().Error(context.Background(), "Failed to seed module permissions:", err)
-			return
-		}
+		// --- RBAC FEATURE FLAG ---------------------------------------------
+		// Seed the module permissions and grant them to the admin role ONLY
+		// when the RBAC feature is enabled. When it is off we leave the
+		// permission table empty so the feature is a clean no-op; the admin
+		// role/account above is still created because login depends on it.
+		// Seeding is idempotent, so enabling the flag later and restarting
+		// populates everything on the next boot.
+		if rbac.IsEnabled() {
+			if err := rbac.SeedModulePermissions(context.Background()); err != nil {
+				g.Log().Error(context.Background(), "Failed to seed module permissions:", err)
+				return
+			}
 
-		if permIds, err := rbac.ModulePermissionIds(context.Background()); err == nil && len(permIds) > 0 {
-			if err := rbac.Role().BindPermissions(context.Background(), adminRoleId, permIds); err != nil {
-				g.Log().Error(context.Background(), "Failed to grant permissions to admin role:", err)
+			if permIds, err := rbac.ModulePermissionIds(context.Background()); err == nil && len(permIds) > 0 {
+				if err := rbac.Role().BindPermissions(context.Background(), adminRoleId, permIds); err != nil {
+					g.Log().Error(context.Background(), "Failed to grant permissions to admin role:", err)
+				}
 			}
 		}
+		// -------------------------------------------------------------------
 
 		// Generate default API Token
 		var api_token string

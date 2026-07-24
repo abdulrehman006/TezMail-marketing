@@ -28,6 +28,9 @@ type LoginRes struct {
 			Status   int    `json:"status" dc:"Account status"`
 			Lang     string `json:"lang" dc:"Preferred language"`
 		} `json:"accountInfo" dc:"Basic account information"`
+		// RbacEnabled tells the frontend whether the RBAC feature is on, so it
+		// can show/hide the Accounts/Roles UI and enable/disable menu gating.
+		RbacEnabled bool `json:"rbacEnabled" dc:"Whether the RBAC feature is enabled"`
 	} `json:"data"`
 }
 
@@ -96,5 +99,8 @@ type CurrentUserRes struct {
 		} `json:"account" dc:"Account information"`
 		Roles       []string `json:"roles" dc:"User roles"`
 		Permissions []string `json:"permissions" dc:"Accessible module keys"`
+		// RbacEnabled mirrors the login response so a page reload can re-derive
+		// the feature state without another round-trip.
+		RbacEnabled bool `json:"rbacEnabled" dc:"Whether the RBAC feature is enabled"`
 	} `json:"data"`
 }

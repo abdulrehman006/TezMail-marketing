@@ -132,6 +132,9 @@ func (c *ControllerV1) Login(ctx context.Context, req *v1.LoginReq) (res *v1.Log
 	res.Data.AccountInfo.Status = account.Status
 	res.Data.AccountInfo.Lang = account.Language
 
+	// Tell the frontend whether the RBAC feature is enabled (see feature.go).
+	res.Data.RbacEnabled = service.IsEnabled()
+
 	loginSuccessFlag = true
 
 	_ = public.WriteLog(ctx, public.LogParams{

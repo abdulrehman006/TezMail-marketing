@@ -32,6 +32,11 @@ func (c *ControllerV1) CurrentUser(ctx context.Context, req *v1.CurrentUserReq) 
 	res.Data.Account.Status = acc.Status
 	res.Data.Account.Lang = acc.Language
 
+	// Tell the frontend whether the RBAC feature is enabled (see feature.go).
+	// When disabled the frontend ignores roles/permissions and shows the full
+	// menu with no gating.
+	res.Data.RbacEnabled = service.IsEnabled()
+
 	roles, _ := service.Account().GetAccountRoles(ctx, accountId)
 	isAdmin := false
 	res.Data.Roles = make([]string, 0, len(roles))
