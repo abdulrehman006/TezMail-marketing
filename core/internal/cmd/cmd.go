@@ -40,6 +40,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -177,6 +178,13 @@ var (
 
 						// check if the request is in the excluded URIs
 						if _, ok := excludesURIs[r.URL.Path]; ok {
+							return
+						}
+
+						// Uploaded email images (/media/*) must be publicly
+						// reachable WITHOUT the safe-path session — mail clients
+						// like Gmail proxy images with no cookies. Never gate them.
+						if strings.HasPrefix(r.URL.Path, "/media/") {
 							return
 						}
 
@@ -383,6 +391,14 @@ var (
 			s.BindHandler("/*any", func(r *ghttp.Request) {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
 					r.Response.WriteHeader(404)
+					return
+				}
+
+				// Public email images: serve directly from the media dir
+				// (guaranteed, independent of static-path priority). Base()
+				// prevents path traversal.
+				if strings.HasPrefix(r.URL.Path, "/media/") {
+					r.Response.ServeFile(filepath.Join(mediaPath, filepath.Base(r.URL.Path)))
 					return
 				}
 
