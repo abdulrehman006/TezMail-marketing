@@ -148,6 +148,9 @@ export const useHtml = () => {
 				case 'menu':
 					containerDom.appendChild(menuToElement(blockConfig))
 					break
+				case 'table':
+					containerDom.appendChild(tableToElement(blockConfig))
+					break
 			}
 
 			elementMap[blockKey] = {
@@ -262,6 +265,44 @@ export const useHtml = () => {
 			elDom.appendChild(linkDom)
 		})
 		return elDom
+	}
+
+	/**
+	 * @description 表格组件 — email-safe <table> with inline cell styles
+	 */
+	const tableToElement = (config: BaseConfig) => {
+		const a = config.attr
+		const rowsData = a.rows ?? []
+		const border = `${a.borderWidth || '1px'} solid ${a.borderColor || '#dddddd'}`
+		const padding = a.cellPadding || '8px'
+
+		const table = document.createElement('table')
+		setElementStyle(table, config.style)
+		table.style.display = 'table'
+		table.style.width = config.style.width || '100%'
+		table.style.borderCollapse = 'collapse'
+
+		const tbody = document.createElement('tbody')
+		rowsData.forEach((row, r) => {
+			const tr = document.createElement('tr')
+			const isHeaderRow = !!a.tableHeader && r === 0
+			row.forEach(text => {
+				const cell = document.createElement(isHeaderRow ? 'th' : 'td')
+				cell.style.border = border
+				cell.style.padding = padding
+				cell.style.textAlign = 'left'
+				cell.style.verticalAlign = 'top'
+				if (isHeaderRow) {
+					cell.style.backgroundColor = a.headerBg || '#f4f4f4'
+					cell.style.fontWeight = 'bold'
+				}
+				cell.textContent = text
+				tr.appendChild(cell)
+			})
+			tbody.appendChild(tr)
+		})
+		table.appendChild(tbody)
+		return table
 	}
 
 	return {

@@ -9,6 +9,7 @@ import (
 	"billionmail-core/internal/controller/contact"
 	"billionmail-core/internal/controller/dockerapi"
 	"billionmail-core/internal/controller/domains"
+	"billionmail-core/internal/controller/email_media"
 	"billionmail-core/internal/controller/email_template"
 	"billionmail-core/internal/controller/files"
 	"billionmail-core/internal/controller/languages"
@@ -38,6 +39,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -178,6 +181,13 @@ var (
 							return
 						}
 
+						// Uploaded email images (/media/*) must be publicly
+						// reachable WITHOUT the safe-path session — mail clients
+						// like Gmail proxy images with no cookies. Never gate them.
+						if strings.HasPrefix(r.URL.Path, "/media/") {
+							return
+						}
+
 						if !r.IsFileRequest() && !strings.HasPrefix(r.URL.Path, "/api/") {
 							return
 						}
@@ -251,6 +261,7 @@ var (
 					dockerapi.NewV1(),
 					contact.NewV1(),
 					email_template.NewV1(),
+					email_media.NewV1(),
 					batch_mail.NewV1(),
 					files.NewV1(),
 					abnormal_recipient.NewV1(),
@@ -356,10 +367,27 @@ var (
 				maillog_stat.CampaignEventHandler(r, r.Get("any").String())
 			})
 
+			// Serve uploaded email images publicly at /media/<file> from the
+			// persistent core data dir (survives redeploys). No auth: email
+			// images must be reachable by recipients' mail clients.
+			mediaPath := public.AbsPath("data/email-media")
+			if err := os.MkdirAll(mediaPath, 0o755); err != nil {
+				g.Log().Warning(ctx, "failed to create email-media dir:", err)
+			}
+			s.AddStaticPath("/media", mediaPath)
+
 			// Add static file handler
 			s.BindHandler("/*any", func(r *ghttp.Request) {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
 					r.Response.WriteHeader(404)
+					return
+				}
+
+				// Public email images: serve directly from the media dir
+				// (guaranteed, independent of static-path priority). Base()
+				// prevents path traversal.
+				if strings.HasPrefix(r.URL.Path, "/media/") {
+					r.Response.ServeFile(filepath.Join(mediaPath, filepath.Base(r.URL.Path)))
 					return
 				}
 

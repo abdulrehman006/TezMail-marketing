@@ -43,6 +43,7 @@ const iconMap: Record<BlockType, () => VNodeChild> = {
 	text: () => <i class="i-mdi:format-text"></i>,
 	image: () => <i class="i-mdi:file-image"></i>,
 	menu: () => <i class="i-mdi:menu"></i>,
+	table: () => <i class="i-mdi:table"></i>,
 	placeholder: () => <i></i>,
 	cell: () => <i></i>,
 	html: () => <i></i>,
