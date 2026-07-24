@@ -95,6 +95,8 @@ type IPermission interface {
 	Delete(ctx context.Context, permissionId int64) error
 	// Check permission
 	Check(ctx context.Context, accountId int64, module, action, resource string) (bool, error)
+	// CheckModule checks whether an account has access to a logical module
+	CheckModule(ctx context.Context, accountId int64, module string) (bool, error)
 }
 
 // Service instance getter functions

@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/public"
 	service "billionmail-core/internal/service/rbac"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/gogf/gf/util/gconv"
 	"github.com/gogf/gf/v2/errors/gerror"
@@ -81,7 +82,11 @@ func (c *ControllerV1) Login(ctx context.Context, req *v1.LoginReq) (res *v1.Log
 	// Verify username and password
 	account, err := service.Account().Login(ctx, req.Username, req.Password)
 	if err != nil {
-		err = fmt.Errorf("Invalid username or password")
+		if errors.Is(err, service.ErrAccountDisabled) {
+			err = fmt.Errorf("This account has been disabled")
+		} else {
+			err = fmt.Errorf("Invalid username or password")
+		}
 		return
 	}
 

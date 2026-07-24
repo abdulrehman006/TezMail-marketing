@@ -232,23 +232,33 @@ func (s *JWTService) JWTAuthMiddleware(r *ghttp.Request) {
 	r.SetCtxVar("accountId", claims.AccountId)
 	r.SetCtxVar("username", claims.Username)
 
-	// Retrieve roles from cache or database
+	// Retrieve role names from cache or database. This MUST be a []string of
+	// role names: the RBAC middleware and rbac.GetCurrentRoles both read
+	// ctx "roles" as []string, and the admin bypass compares against "admin".
+	// (Previously this stored []model.Role and only set the ctx var on a cache
+	// hit, which silently broke the admin bypass and would lock everyone out
+	// once enforcement was enabled.)
 	cacheKey := fmt.Sprintf("ACCOUNT_ROLES_%d", claims.AccountId)
-	roles := public.GetCache(cacheKey)
+	var roleNames []string
 
-	if roles == nil {
-		roles, err = Account().GetAccountRoles(r.GetCtx(), claims.AccountId)
-		if err != nil {
+	if cached := public.GetCache(cacheKey); cached != nil {
+		roleNames = gconv.Strings(cached)
+	} else {
+		roles, rErr := Account().GetAccountRoles(r.GetCtx(), claims.AccountId)
+		if rErr != nil {
 			resp.Msg = "failed to get account roles"
 			r.Response.WriteJson(resp)
 			r.Exit()
 			return
 		}
-
-		public.SetCache(cacheKey, roles, 20)
-	} else {
-		r.SetCtxVar("roles", roles)
+		roleNames = make([]string, 0, len(roles))
+		for _, role := range roles {
+			roleNames = append(roleNames, role.RoleName)
+		}
+		public.SetCache(cacheKey, roleNames, 20)
 	}
+
+	r.SetCtxVar("roles", roleNames)
 
 	// Update Session
 	err = r.Session.Set("SignedToken", tokenString)

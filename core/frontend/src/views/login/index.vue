@@ -143,6 +143,8 @@ const handleLogin = async () => {
 				refresh_token: res.refresh_token,
 				ttl: res.ttl,
 			})
+			// Load roles/permissions so the menu is correct before we navigate.
+			await userStore.fetchCurrentUser()
 			setTimeout(() => {
 				router.push('/')
 			}, 1000)

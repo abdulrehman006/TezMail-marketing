@@ -1,56 +1,23 @@
 package middlewares
 
 import (
-	"billionmail-core/internal/service/public"
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
-	"github.com/gogf/gf/v2/text/gregex"
 	"github.com/gogf/gf/v2/util/gconv"
 
 	"billionmail-core/internal/service/rbac"
 )
 
-// PathToRouteInfo converts path to module, action, and resource
-func PathToRouteInfo(path string) (module, action, resource string) {
-	// Extract module
-	modules := []string{"account", "role", "permission"}
-	for _, m := range modules {
-		if strings.Contains(path, "/"+m+"/") || strings.HasSuffix(path, "/"+m) {
-			module = m
-			break
-		}
-	}
-
-	// Extract action and resource
-	pattern := `/api/(\w+)/(\w+)(?:/.*)?`
-	match, err := gregex.MatchString(pattern, path)
-	if err == nil && len(match) >= 3 {
-		resource = match[1]
-		actionName := match[2]
-
-		// Map HTTP method to CRUD action if action is a standard CRUD
-		switch actionName {
-		case "list", "detail":
-			action = "read"
-		case "create":
-			action = "create"
-		case "update":
-			action = "update"
-		case "delete":
-			action = "delete"
-		default:
-			action = actionName
-		}
-	}
-
-	return
-}
-
-// RBACMiddleware handles permission verification for HTTP requests
+// RBACMiddleware handles per-module permission verification for API requests.
+//
+// The model is module/feature based (see rbac.Modules): every request path is
+// resolved to a logical module, and the caller must hold at least one active
+// permission in that module through one of their roles. The built-in "admin"
+// role bypasses all checks. Auth-lifecycle and utility endpoints are never
+// gated (see rbac.ModuleForPath).
 type RBACMiddleware struct {
 	PermissionService rbac.IPermission
 }
@@ -62,28 +29,32 @@ func NewRBACMiddleware() *RBACMiddleware {
 	}
 }
 
-// PermissionCheck checks if the current user has the required permission
+// PermissionCheck enforces module access for the current request. It runs after
+// the JWT middleware, which populates ctx "accountId" and "roles" ([]string).
 func (m *RBACMiddleware) PermissionCheck(r *ghttp.Request) {
-	// Skip permission check for authentication-related routes
-	if r.URL.Path == "/api/v1/login" ||
-		r.URL.Path == "/api/v1/refresh-token" {
+	module, selfServe := rbac.ModuleForPath(r.URL.Path)
+
+	// Auth lifecycle + pre-login helpers are always allowed.
+	if selfServe {
 		r.Middleware.Next()
 		return
 	}
 
-	// Extract account ID from context
+	// If the JWT middleware did not set an account id, this is a public route it
+	// deliberately skipped (unsubscribe, subscribe/submit, the send API, the
+	// language switch, etc.). JWT already 401s protected routes that lack a
+	// valid token before this middleware runs, so reaching here with no account
+	// id means the route is public — let it through untouched. (Returning 401
+	// here would break every public endpoint.)
 	accountIdVar := r.GetCtxVar("accountId")
 	if accountIdVar == nil {
-		r.Response.WriteJson(public.CodeMap[401])
-		r.Exit()
+		r.Middleware.Next()
 		return
 	}
 	accountId := gconv.Int64(accountIdVar)
 
-	// Get roles from context
+	// The admin role has unrestricted access.
 	roles := r.GetCtxVar("roles", []string{}).Strings()
-
-	// Check for admin role (has all permissions)
 	for _, role := range roles {
 		if role == "admin" {
 			r.Middleware.Next()
@@ -91,21 +62,16 @@ func (m *RBACMiddleware) PermissionCheck(r *ghttp.Request) {
 		}
 	}
 
-	// Extract module, action, and resource from request path
-	module, action, resource := PathToRouteInfo(r.URL.Path)
-
-	// If we couldn't determine the module, action, or resource, log it and allow the request
-	if module == "" || action == "" || resource == "" {
-		g.Log().Warning(context.Background(),
-			fmt.Sprintf("Could not determine permission components for path: %s, allowing access", r.URL.Path))
+	// Utility endpoints not mapped to any module are open to any authenticated
+	// user — never fail-closed on an unknown path, that would lock people out.
+	if module == "" {
 		r.Middleware.Next()
 		return
 	}
 
-	// Check if user has the required permission
-	hasPermission, err := m.PermissionService.Check(r.GetCtx(), accountId, module, action, resource)
+	hasPermission, err := m.PermissionService.CheckModule(r.GetCtx(), accountId, module)
 	if err != nil {
-		g.Log().Error(r.GetCtx(), "Permission check error:", err)
+		g.Log().Error(r.GetCtx(), "[RBAC] permission check error:", err)
 		r.Response.WriteJson(g.Map{
 			"code": 500,
 			"msg":  "Error checking permissions",
@@ -115,6 +81,8 @@ func (m *RBACMiddleware) PermissionCheck(r *ghttp.Request) {
 	}
 
 	if !hasPermission {
+		g.Log().Warning(r.GetCtx(),
+			fmt.Sprintf("[RBAC] deny account=%d module=%q path=%q", accountId, module, r.URL.Path))
 		r.Response.WriteJson(g.Map{
 			"code": 403,
 			"msg":  "Insufficient permissions",
@@ -126,50 +94,22 @@ func (m *RBACMiddleware) PermissionCheck(r *ghttp.Request) {
 	r.Middleware.Next()
 }
 
-// HasPermission checks if the current user has a specific permission
-func HasPermission(ctx context.Context, module, action, resource string) bool {
-	accountId := rbac.GetCurrentAccountId(ctx)
-	if accountId == 0 {
-		return false
-	}
-
-	// Get roles from context
-	rolesVar := ctx.Value("roles")
-	roles := []string{}
-	if rolesVar != nil {
-		roles = rolesVar.([]string)
-	}
-
-	// Check for admin role (has all permissions)
-	for _, role := range roles {
+// HasModule reports whether the current account may access the given logical
+// module. Admins always may. Usable from controllers for fine-grained checks.
+func HasModule(ctx context.Context, module string) bool {
+	for _, role := range rbac.GetCurrentRoles(ctx) {
 		if role == "admin" {
 			return true
 		}
 	}
-
-	// Check specific permission
-	permissionService := rbac.Permission()
-	hasPermission, err := permissionService.Check(ctx, accountId, module, action, resource)
-	if err != nil {
-		g.Log().Error(ctx, "Permission check error:", err)
+	accountId := rbac.GetCurrentAccountId(ctx)
+	if accountId == 0 {
 		return false
 	}
-
-	return hasPermission
-}
-
-// RequirePermission returns a middleware handler that checks for a specific permission
-// RequirePermission middleware checks if user has required permission
-func RequirePermission(module, action, resource string) ghttp.HandlerFunc {
-	return func(r *ghttp.Request) {
-		if !HasPermission(r.GetCtx(), module, action, resource) {
-			r.Response.WriteJson(g.Map{
-				"code": 403,
-				"msg":  "Insufficient permissions",
-			})
-			r.Exit()
-			return
-		}
-		r.Middleware.Next()
+	ok, err := rbac.Permission().CheckModule(ctx, accountId, module)
+	if err != nil {
+		g.Log().Error(ctx, "[RBAC] HasModule check error:", err)
+		return false
 	}
+	return ok
 }

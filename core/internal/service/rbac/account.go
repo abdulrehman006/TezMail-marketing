@@ -3,12 +3,18 @@ package rbac
 import (
 	"billionmail-core/internal/model"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrAccountDisabled is returned by Login when the credentials are valid but the
+// account's status is disabled. Callers can distinguish it via errors.Is to show
+// a clear message instead of "invalid credentials".
+var ErrAccountDisabled = errors.New("account is disabled")
 
 type accountService struct{}
 
@@ -167,7 +173,7 @@ func (s *accountService) AssignRole(ctx context.Context, accountId int64, roleId
 	_, err := g.DB().Model("account_role").Data(g.Map{
 		"account_id":  accountId,
 		"role_id":     roleId,
-		"create_time": time.Now(),
+		"create_time": time.Now().Unix(),
 	}).Insert()
 	return err
 }
@@ -194,11 +200,12 @@ func (s *accountService) BindRoles(ctx context.Context, accountId int64, roleIds
 	}
 
 	// Add new roles
+	now := time.Now().Unix()
 	for _, roleId := range roleIds {
 		_, err = g.DB().Model("account_role").Data(g.Map{
 			"account_id":  accountId,
 			"role_id":     roleId,
-			"create_time": time.Now(),
+			"create_time": now,
 		}).Insert()
 		if err != nil {
 			return err
@@ -212,8 +219,9 @@ func (s *accountService) BindRoles(ctx context.Context, accountId int64, roleIds
 func (s *accountService) GetRoles(ctx context.Context, accountId int64) ([]model.Role, error) {
 	var roles []model.Role
 	err := g.DB().Model("role").
-		LeftJoin("account_role", "role.id=account_role.role_id").
+		LeftJoin("account_role", "role.role_id=account_role.role_id").
 		Where("account_role.account_id = ?", accountId).
+		Fields("role.*"). // qualify: both tables have role_id, unqualified is ambiguous
 		Scan(&roles)
 	return roles, err
 }
@@ -222,9 +230,13 @@ func (s *accountService) GetRoles(ctx context.Context, accountId int64) ([]model
 func (s *accountService) GetPermissions(ctx context.Context, accountId int64) ([]model.Permission, error) {
 	var permissions []model.Permission
 	err := g.DB().Model("permission").
-		LeftJoin("role_permission", "permission.id=role_permission.permission_id").
+		LeftJoin("role_permission", "permission.permission_id=role_permission.permission_id").
 		LeftJoin("account_role", "role_permission.role_id=account_role.role_id").
+		LeftJoin("role", "account_role.role_id=role.role_id").
 		Where("account_role.account_id = ?", accountId).
+		Where("permission.status = ?", 1).
+		Where("role.status = ?", 1). // only active roles grant menu access, matching CheckModule
+		Fields("permission.*").      // qualify: role_permission also has permission_id
 		Scan(&permissions)
 	return permissions, err
 }
@@ -246,6 +258,11 @@ func (s *accountService) Login(ctx context.Context, username, password string) (
 	err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte(password))
 	if err != nil {
 		return nil, err
+	}
+
+	// Reject disabled accounts even when the password is correct.
+	if account.Status != 1 {
+		return nil, ErrAccountDisabled
 	}
 
 	// Update last login time
@@ -275,11 +292,11 @@ func (s *accountService) IsAdmin(ctx context.Context, accountId int64) (bool, er
 	return false, nil
 }
 
-// CountAdmins counts admin accounts
+// CountAdmins counts accounts that hold the admin role
 func (s *accountService) CountAdmins(ctx context.Context) (int, error) {
 	count, err := g.DB().Model("account_role").
-		LeftJoin("role", "account_role.role_id=role.id").
-		Where("role.name = ?", "admin").
+		LeftJoin("role", "account_role.role_id=role.role_id").
+		Where("role.role_name = ?", "admin").
 		Count()
 	return count, err
 }

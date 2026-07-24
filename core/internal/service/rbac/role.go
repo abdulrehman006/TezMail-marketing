@@ -21,7 +21,7 @@ func (s *roleService) GetList(ctx context.Context, page, pageSize int, name stri
 
 	query := g.DB().Model("role")
 	if name != "" {
-		query = query.Where("name LIKE ?", "%"+name+"%")
+		query = query.Where("role_name LIKE ?", "%"+name+"%")
 	}
 	if status > 0 {
 		query = query.Where("status = ?", status)
@@ -35,7 +35,7 @@ func (s *roleService) GetList(ctx context.Context, page, pageSize int, name stri
 	total = count
 
 	// Get paginated data
-	err = query.Page(page, pageSize).Scan(&roles)
+	err = query.Page(page, pageSize).Order("role_id ASC").Scan(&roles)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -46,14 +46,14 @@ func (s *roleService) GetList(ctx context.Context, page, pageSize int, name stri
 // GetAll gets all roles
 func (s *roleService) GetAll(ctx context.Context) ([]model.Role, error) {
 	var roles []model.Role
-	err := g.DB().Model("role").Scan(&roles)
+	err := g.DB().Model("role").Order("role_id ASC").Scan(&roles)
 	return roles, err
 }
 
 // GetById gets role details by ID
 func (s *roleService) GetById(ctx context.Context, roleId int64) (*model.Role, error) {
 	var role model.Role
-	err := g.DB().Model("role").Where("id = ?", roleId).Scan(&role)
+	err := g.DB().Model("role").Where("role_id = ?", roleId).Scan(&role)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +62,13 @@ func (s *roleService) GetById(ctx context.Context, roleId int64) (*model.Role, e
 
 // Create creates a new role
 func (s *roleService) Create(ctx context.Context, name, description string, status int) (int64, error) {
+	now := time.Now().Unix()
 	result, err := g.DB().Model("role").Insert(g.Map{
 		"role_name":   name,
 		"description": description,
 		"status":      status,
-		"create_time": time.Now().Unix(),
-		"update_time": time.Now().Unix(),
+		"create_time": now,
+		"update_time": now,
 	})
 	if err != nil {
 		return 0, err
@@ -84,21 +85,21 @@ func (s *roleService) Create(ctx context.Context, name, description string, stat
 // Update updates role information
 func (s *roleService) Update(ctx context.Context, roleId int64, name, description string, status int) error {
 	_, err := g.DB().Model("role").Data(g.Map{
-		"name":        name,
+		"role_name":   name,
 		"description": description,
 		"status":      status,
-		"update_time": time.Now(),
-	}).Where("id = ?", roleId).Update()
+		"update_time": time.Now().Unix(),
+	}).Where("role_id = ?", roleId).Update()
 	return err
 }
 
 // Delete deletes a role
 func (s *roleService) Delete(ctx context.Context, roleId int64) error {
-	_, err := g.DB().Model("role").Where("id = ?", roleId).Delete()
+	_, err := g.DB().Model("role").Where("role_id = ?", roleId).Delete()
 	return err
 }
 
-// BindPermissions binds permissions to a role
+// BindPermissions binds permissions to a role (replaces the existing set)
 func (s *roleService) BindPermissions(ctx context.Context, roleId int64, permissionIds []int64) error {
 	// Delete existing permissions
 	_, err := g.DB().Model("role_permission").Where("role_id = ?", roleId).Delete()
@@ -107,11 +108,12 @@ func (s *roleService) BindPermissions(ctx context.Context, roleId int64, permiss
 	}
 
 	// Add new permissions
+	now := time.Now().Unix()
 	for _, permId := range permissionIds {
 		_, err = g.DB().Model("role_permission").Data(g.Map{
 			"role_id":       roleId,
 			"permission_id": permId,
-			"create_time":   time.Now(),
+			"create_time":   now,
 		}).Insert()
 		if err != nil {
 			return err
@@ -125,15 +127,16 @@ func (s *roleService) BindPermissions(ctx context.Context, roleId int64, permiss
 func (s *roleService) GetPermissions(ctx context.Context, roleId int64) ([]model.Permission, error) {
 	var permissions []model.Permission
 	err := g.DB().Model("permission").
-		LeftJoin("role_permission", "permission.id=role_permission.permission_id").
+		LeftJoin("role_permission", "permission.permission_id = role_permission.permission_id").
 		Where("role_permission.role_id = ?", roleId).
+		Fields("permission.*"). // qualify: role_permission also has permission_id
 		Scan(&permissions)
 	return permissions, err
 }
 
 // NameExists checks if role name exists
 func (s *roleService) NameExists(ctx context.Context, name string) (bool, error) {
-	count, err := g.DB().Model("role").Where("name = ?", name).Count()
+	count, err := g.DB().Model("role").Where("role_name = ?", name).Count()
 	if err != nil {
 		return false, err
 	}
@@ -145,7 +148,7 @@ func (s *roleService) AssignPermission(ctx context.Context, roleId int64, permis
 	_, err := g.DB().Model("role_permission").Data(g.Map{
 		"role_id":       roleId,
 		"permission_id": permissionId,
-		"create_time":   time.Now(),
+		"create_time":   time.Now().Unix(),
 	}).Insert()
 	return err
 }
