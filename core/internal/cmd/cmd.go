@@ -39,6 +39,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -373,7 +374,11 @@ var (
 			// Serve uploaded email images publicly at /media/<file> from the
 			// persistent core data dir (survives redeploys). No auth: email
 			// images must be reachable by recipients' mail clients.
-			s.AddStaticPath("/media", public.AbsPath("data/email-media"))
+			mediaPath := public.AbsPath("data/email-media")
+			if err := os.MkdirAll(mediaPath, 0o755); err != nil {
+				g.Log().Warning(ctx, "failed to create email-media dir:", err)
+			}
+			s.AddStaticPath("/media", mediaPath)
 
 			s.BindHandler("/*any", func(r *ghttp.Request) {
 				if strings.HasPrefix(r.URL.Path, "/api/") {
