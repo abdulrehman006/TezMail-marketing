@@ -241,11 +241,17 @@ const handleAdd = () => {
 }
 
 const handleStatusChange = async (row: MailBox, val: number) => {
+	// local_part is required by the update endpoint, and the update rewrites
+	// every column, so quota_active must be echoed too. Omitting them made the
+	// request fail validation (400) -- the toggle silently never persisted -- and
+	// would have reset quota_active to its default.
 	await updateMailbox({
+		local_part: row.local_part,
 		full_name: row.full_name,
 		domain: row.domain,
 		password: row.password,
 		quota: row.quota,
+		quota_active: row.quota_active,
 		isAdmin: row.is_admin,
 		active: val,
 	})

@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/dockerapi"
 	"billionmail-core/internal/service/public"
 	"context"
+	crand "crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -226,15 +227,37 @@ func PasswdMD5Crypt(ctx context.Context, password string) (string, error) {
 	return result, nil
 }
 
+// generateRandomPassword builds a password from cryptographically secure
+// randomness. It previously used math/rand seeded by the clock, which is
+// predictable -- an attacker who can estimate the seed can reproduce every
+// generated password. crypto/rand removes that.
 func generateRandomPassword(charset string, length int) string {
 	if charset == "" {
 		charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	}
+	buf := make([]byte, length)
+	if _, err := crand.Read(buf); err != nil {
+		// crypto/rand only fails if the OS entropy source is unavailable, which
+		// is a fatal host condition. Return empty rather than silently fall back
+		// to a weak generator; callers require a non-empty password and will
+		// error, which is the safe outcome.
+		return ""
+	}
 	password := make([]byte, length)
-	for i := range password {
-		password[i] = charset[rand.Intn(len(charset))]
+	for i, b := range buf {
+		password[i] = charset[int(b)%len(charset)]
 	}
 	return string(password)
+}
+
+// GenerateMailboxPassword returns a strong random password for callers outside
+// this package (e.g. the import controller, which must never fall back to a
+// hard-coded default).
+func GenerateMailboxPassword(length int) string {
+	if length < 12 {
+		length = 12
+	}
+	return generateRandomPassword("", length)
 }
 func BatchAdd(ctx context.Context, domain string, quota int, count int, prefix string, quotaActive int) ([]string, error) {
 
@@ -440,9 +463,30 @@ func NormalizeMailboxes() (err error) {
 	return
 }
 
-func maildirRoot(m *v1.Mailbox) string {
-	vmailRoot := public.AbsPath("../vmail-data")
-	return filepath.Join(vmailRoot, m.Domain, m.LocalPart)
+// maildirRoot resolves the on-disk maildir path for a mailbox and guarantees it
+// stays inside the vmail root.
+//
+// domain and local_part are user-supplied. filepath.Join cleans the result, but
+// a value containing ".." can still resolve to a parent of the root. Without
+// this check a crafted local_part like "../../tmp/x" caused os.MkdirAll to
+// create directories (and write a maildirsize file) anywhere the process could
+// reach. The prefix check makes any such escape an error instead.
+func maildirRoot(m *v1.Mailbox) (string, error) {
+	return resolveMailPath(filepath.Clean(public.AbsPath("../vmail-data")), m.Domain, m.LocalPart)
+}
+
+// resolveMailPath joins base/domain/localPart and guarantees the result stays
+// inside base. Split out from maildirRoot so the traversal check is unit
+// testable without the app's path resolver.
+func resolveMailPath(base, domain, localPart string) (string, error) {
+	root := filepath.Clean(filepath.Join(base, domain, localPart))
+	// Must be a proper subdirectory of the root. This rejects both escapes
+	// (../..) and the degenerate case that resolves to the root itself
+	// (e.g. local_part ".."), which would drop a maildir directly in the root.
+	if !strings.HasPrefix(root, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("mailbox path for %q/%q escapes the mail root", domain, localPart)
+	}
+	return root, nil
 }
 
 func atomicWriteMaildirsize(path string, content []byte) error {
@@ -455,7 +499,10 @@ func atomicWriteMaildirsize(path string, content []byte) error {
 }
 
 func ensureMaildirAndQuotaFile(ctx context.Context, m *v1.Mailbox) error {
-	root := maildirRoot(m)
+	root, err := maildirRoot(m)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
@@ -485,7 +532,10 @@ func ensureMaildirAndQuotaFile(ctx context.Context, m *v1.Mailbox) error {
 }
 
 func updateMaildirQuotaHeader(ctx context.Context, m *v1.Mailbox) error {
-	root := maildirRoot(m)
+	root, err := maildirRoot(m)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}

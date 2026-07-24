@@ -13,12 +13,14 @@ export const getMailboxList = (params: {
 }
 
 type MailboxParams = {
+	local_part: string
 	full_name: string
 	domain: string
 	password: string
 	active: number
 	isAdmin: number
 	quota: number
+	quota_active?: number
 }
 
 export const createMailbox = (params: MailboxParams) => {
