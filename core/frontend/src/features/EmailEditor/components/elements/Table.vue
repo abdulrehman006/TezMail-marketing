@@ -101,10 +101,16 @@ const handleUnSelect = () => {}
 <style lang="scss" scoped>
 .et-table {
 	width: 100%;
+	// Sit above the block-section overlay (z-index 100/101 in Section.vue) so
+	// clicks reach the cells and inline editing works.
+	position: relative;
+	z-index: 102;
 
 	td,
 	th {
 		outline: none;
+		cursor: text;
+		user-select: text;
 
 		&:focus {
 			box-shadow: inset 0 0 0 2px rgba(24, 144, 255, 0.4);
