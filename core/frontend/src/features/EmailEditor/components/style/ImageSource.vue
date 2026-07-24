@@ -21,7 +21,7 @@
 				<input
 					ref="fileInput"
 					type="file"
-					accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/bmp"
+					accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
 					class="hidden"
 					@change="onFile" />
 			</div>
