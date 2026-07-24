@@ -25,7 +25,7 @@
 			</template>
 			<template #modal>
 				<form-modal></form-modal>
-				<password-modal ref="passwordRef"></password-modal>
+				<account-password ref="passwordRef"></account-password>
 			</template>
 		</bt-table-layout>
 	</div>
