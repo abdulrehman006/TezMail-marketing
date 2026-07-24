@@ -16,6 +16,8 @@ export type ImageType = 'image'
 
 export type MenuType = 'menu'
 
+export type TableType = 'table'
+
 export type HtmlType = 'html'
 
 /**
@@ -32,6 +34,7 @@ export type BlockType =
 	| TextType // 文本
 	| ImageType // 图片
 	| MenuType // 菜单
+	| TableType // 表格
 	| HtmlType // HTML
 
 /**
@@ -125,6 +128,13 @@ export type BaseAttr = {
 	src?: string
 	alt?: string
 	links?: { id: string; label: string; href: string }[]
+	// Table widget: grid of cell contents (rows of columns), plus table options.
+	rows?: string[][]
+	tableHeader?: boolean // treat the first row as a styled header
+	borderColor?: string
+	borderWidth?: string
+	headerBg?: string
+	cellPadding?: string
 }
 
 /**

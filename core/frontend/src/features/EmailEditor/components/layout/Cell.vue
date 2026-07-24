@@ -52,6 +52,7 @@ import BlockHeader from '../elements/Header.vue'
 import BlockText from '../elements/Text.vue'
 import BlockImage from '../elements/Image.vue'
 import BlockMenu from '../elements/Menu.vue'
+import BlockTable from '../elements/Table.vue'
 import BlockCopyright from '../elements/Copyright.vue'
 
 const { data, blockKey } = defineProps({
@@ -429,6 +430,7 @@ const resolveBlockComponent = (type: BlockType) => {
 		text: BlockText,
 		image: BlockImage,
 		menu: BlockMenu,
+		table: BlockTable,
 		copyright: BlockCopyright,
 	}
 

@@ -12,6 +12,7 @@ import HeaderConfig from '../config/Header.vue'
 import TextConfig from '../config/Text.vue'
 import ImageConfig from '../config/Image.vue'
 import MenuConfig from '../config/Menu.vue'
+import TableConfig from '../config/Table.vue'
 import NoneConfig from '../config/None.vue'
 
 const { selectedBlockType, selectedBlockKey } = useConfig()
@@ -34,6 +35,8 @@ const getComponentByType = computed(() => {
 			return ImageConfig
 		case 'menu':
 			return MenuConfig
+		case 'table':
+			return TableConfig
 		default:
 			return NoneConfig // 默认返回 NoneConfig
 	}
