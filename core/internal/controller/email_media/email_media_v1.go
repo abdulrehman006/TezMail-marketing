@@ -22,14 +22,15 @@ const mediaDirName = "data/email-media"
 // maxUploadBytes caps a single upload at 5 MB.
 const maxUploadBytes int64 = 5 * 1024 * 1024
 
-// allowedExt is the set of accepted image extensions.
+// allowedExt is the set of accepted image extensions. SVG is deliberately
+// excluded: it can embed <script>, and /media is served publicly on the
+// panel's own origin (stored-XSS risk); mail clients strip SVG anyway.
 var allowedExt = map[string]bool{
 	".png":  true,
 	".jpg":  true,
 	".jpeg": true,
 	".gif":  true,
 	".webp": true,
-	".svg":  true,
 	".bmp":  true,
 }
 
@@ -74,7 +75,7 @@ func (c *ControllerV1) Upload(ctx context.Context, req *v1.UploadReq) (res *v1.U
 
 	ext := strings.ToLower(filepath.Ext(req.File.Filename))
 	if !allowedExt[ext] {
-		res.SetError(gerror.New("Unsupported image type; allowed: png, jpg, gif, webp, svg, bmp"))
+		res.SetError(gerror.New("Unsupported image type; allowed: png, jpg, gif, webp, bmp"))
 		return res, nil
 	}
 

@@ -19,7 +19,7 @@ type MediaItem struct {
 type UploadReq struct {
 	g.Meta        `path:"/email-media/upload" method:"post" tags:"EmailMedia" summary:"Upload an email image" mime:"multipart/form-data" in:"body"`
 	Authorization string             `json:"authorization" dc:"Authorization" in:"header"`
-	File          *ghttp.UploadFile  `p:"file" type:"file" dc:"Image file (png/jpg/gif/webp/svg)"`
+	File          *ghttp.UploadFile  `p:"file" type:"file" dc:"Image file (png/jpg/gif/webp/bmp)"`
 }
 
 // UploadRes returns the public URL of the uploaded image.
