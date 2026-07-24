@@ -118,7 +118,10 @@ func (c *ControllerV1) ImportMailbox(ctx context.Context, req *v1.ImportMailboxR
 		}
 
 		if mailboxes[i].Password == "" {
-			mailboxes[i].Password = "123456"
+			// A password-less import row previously got the hard-coded "123456".
+			// Generate a strong password instead; it is retrievable from the
+			// mailbox list afterwards, so the admin can still hand it out.
+			mailboxes[i].Password = mail_boxes.GenerateMailboxPassword(16)
 		}
 
 		if mailboxes[i].IsAdmin == 0 {
