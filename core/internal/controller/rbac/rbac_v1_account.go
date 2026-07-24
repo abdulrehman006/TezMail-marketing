@@ -138,6 +138,21 @@ func (c *ControllerV1) AccountUpdate(ctx context.Context, req *v1.AccountUpdateR
 		lang = acc.Language
 	}
 
+	// Reject duplicate username/email up front with a clear message instead of
+	// letting the DB unique constraint surface a raw driver error.
+	if username != acc.Username {
+		if exists, _ := service.Account().UsernameExists(ctx, username); exists {
+			res.SetError(gerror.New("Username already exists"))
+			return res, nil
+		}
+	}
+	if email != acc.Email && email != "" {
+		if exists, _ := service.Account().EmailExists(ctx, email); exists {
+			res.SetError(gerror.New("Email already exists"))
+			return res, nil
+		}
+	}
+
 	if err := service.Account().Update(ctx, &model.Account{
 		AccountId: req.AccountId,
 		Username:  username,

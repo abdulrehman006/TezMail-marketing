@@ -3,12 +3,18 @@ package rbac
 import (
 	"billionmail-core/internal/model"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrAccountDisabled is returned by Login when the credentials are valid but the
+// account's status is disabled. Callers can distinguish it via errors.Is to show
+// a clear message instead of "invalid credentials".
+var ErrAccountDisabled = errors.New("account is disabled")
 
 type accountService struct{}
 
@@ -226,8 +232,11 @@ func (s *accountService) GetPermissions(ctx context.Context, accountId int64) ([
 	err := g.DB().Model("permission").
 		LeftJoin("role_permission", "permission.permission_id=role_permission.permission_id").
 		LeftJoin("account_role", "role_permission.role_id=account_role.role_id").
+		LeftJoin("role", "account_role.role_id=role.role_id").
 		Where("account_role.account_id = ?", accountId).
-		Fields("permission.*"). // qualify: role_permission also has permission_id
+		Where("permission.status = ?", 1).
+		Where("role.status = ?", 1). // only active roles grant menu access, matching CheckModule
+		Fields("permission.*").      // qualify: role_permission also has permission_id
 		Scan(&permissions)
 	return permissions, err
 }
@@ -249,6 +258,11 @@ func (s *accountService) Login(ctx context.Context, username, password string) (
 	err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte(password))
 	if err != nil {
 		return nil, err
+	}
+
+	// Reject disabled accounts even when the password is correct.
+	if account.Status != 1 {
+		return nil, ErrAccountDisabled
 	}
 
 	// Update last login time

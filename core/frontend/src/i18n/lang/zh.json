@@ -100,6 +100,91 @@
 			"roles": "角色"
 		}
 	},
+	"rbac": {
+		"status": {
+			"enabled": "启用",
+			"disabled": "禁用"
+		},
+		"api": {
+			"loading": {
+				"saving": "保存中，请稍候...",
+				"deleting": "删除中，请稍候..."
+			}
+		},
+		"account": {
+			"actions": {
+				"add": "添加账号",
+				"resetPassword": "重置密码"
+			},
+			"search": {
+				"placeholder": "搜索用户名"
+			},
+			"columns": {
+				"username": "用户名",
+				"email": "邮箱",
+				"status": "状态",
+				"createTime": "创建时间"
+			},
+			"form": {
+				"addTitle": "添加账号",
+				"editTitle": "编辑账号",
+				"username": "用户名",
+				"usernamePlaceholder": "请输入用户名",
+				"email": "邮箱",
+				"emailPlaceholder": "请输入邮箱地址",
+				"password": "密码",
+				"passwordPlaceholder": "至少 8 个字符",
+				"roles": "角色",
+				"rolesPlaceholder": "请选择一个或多个角色",
+				"status": "启用"
+			},
+			"validation": {
+				"usernameRequired": "请输入用户名",
+				"emailRequired": "请输入邮箱地址",
+				"emailInvalid": "邮箱格式不正确",
+				"passwordLength": "密码至少需要 8 个字符"
+			},
+			"password": {
+				"title": "重置 {name} 的密码",
+				"newPassword": "新密码"
+			},
+			"delete": {
+				"title": "删除账号",
+				"confirm": "确定要删除账号 [{name}] 吗？"
+			}
+		},
+		"role": {
+			"actions": {
+				"add": "添加角色"
+			},
+			"search": {
+				"placeholder": "搜索角色名称"
+			},
+			"columns": {
+				"name": "角色名称",
+				"description": "描述",
+				"status": "状态",
+				"createTime": "创建时间"
+			},
+			"form": {
+				"addTitle": "添加角色",
+				"editTitle": "编辑角色",
+				"name": "角色名称",
+				"namePlaceholder": "请输入角色名称",
+				"description": "描述",
+				"descriptionPlaceholder": "该角色的用途？",
+				"permissions": "可访问模块",
+				"status": "启用"
+			},
+			"validation": {
+				"nameRequired": "请输入角色名称"
+			},
+			"delete": {
+				"title": "删除角色",
+				"confirm": "确定要删除角色 [{name}] 吗？"
+			}
+		}
+	},
 	"login": {
 		"title": "TezMail",
 		"form": {

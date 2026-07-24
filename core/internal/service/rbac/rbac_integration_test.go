@@ -17,6 +17,7 @@ package rbac
 import (
 	"billionmail-core/internal/model"
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -350,5 +351,59 @@ func TestIntegration_CountAdmins(t *testing.T) {
 
 	if ok, _ := Account().IsAdmin(ctx, a1); !ok {
 		t.Error("IsAdmin(admin1) expected true")
+	}
+}
+
+// --- Status enforcement --------------------------------------------------
+
+func TestIntegration_DisabledRoleRevokesAccess(t *testing.T) {
+	reset(t)
+	ctx := context.Background()
+
+	roleId, _ := Role().Create(ctx, "staff", "", 1)
+	accId, _ := Account().Create(ctx, &model.Account{
+		Username: "s", Password: "secret123", Email: "s@example.com", Status: 1, Language: "en",
+	})
+	_ = Account().BindRoles(ctx, accId, []int64{roleId})
+	_ = Role().BindPermissions(ctx, roleId, []int64{mailboxesPermId(t)})
+
+	if ok, _ := Permission().CheckModule(ctx, accId, "mailboxes"); !ok {
+		t.Fatal("active role should grant access")
+	}
+
+	// Disabling the role must immediately revoke access.
+	if err := Role().Update(ctx, roleId, "staff", "", 0); err != nil {
+		t.Fatalf("disable role: %v", err)
+	}
+	if ok, _ := Permission().CheckModule(ctx, accId, "mailboxes"); ok {
+		t.Error("disabled role must NOT grant access")
+	}
+}
+
+func TestIntegration_DisabledAccountCannotLogin(t *testing.T) {
+	reset(t)
+	ctx := context.Background()
+
+	accId, err := Account().Create(ctx, &model.Account{
+		Username: "u", Password: "secret123", Email: "u@example.com", Status: 1, Language: "en",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := Account().Login(ctx, "u", "secret123"); err != nil {
+		t.Fatalf("active account should log in: %v", err)
+	}
+
+	// Disable the account.
+	if err := Account().Update(ctx, &model.Account{
+		AccountId: accId, Username: "u", Email: "u@example.com", Status: 0, Language: "en",
+	}); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
+	_, err = Account().Login(ctx, "u", "secret123")
+	if !errors.Is(err, ErrAccountDisabled) {
+		t.Errorf("disabled account login: got err=%v, want ErrAccountDisabled", err)
 	}
 }

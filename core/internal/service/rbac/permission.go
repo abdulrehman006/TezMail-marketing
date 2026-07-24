@@ -108,16 +108,19 @@ func (s *permissionService) Delete(ctx context.Context, permissionId int64) erro
 	return err
 }
 
-// Check checks whether an account has a specific (module, action, resource) permission
+// Check checks whether an account has a specific (module, action, resource)
+// permission. Only active permissions granted through an active role count.
 func (s *permissionService) Check(ctx context.Context, accountId int64, module, action, resource string) (bool, error) {
 	count, err := g.DB().Model("permission").
 		LeftJoin("role_permission", "permission.permission_id = role_permission.permission_id").
 		LeftJoin("account_role", "role_permission.role_id = account_role.role_id").
+		LeftJoin("role", "account_role.role_id = role.role_id").
 		Where("account_role.account_id = ?", accountId).
 		Where("permission.module = ?", module).
 		Where("permission.action = ?", action).
 		Where("permission.resource = ?", resource).
 		Where("permission.status = ?", 1).
+		Where("role.status = ?", 1).
 		Count()
 	if err != nil {
 		return false, err
@@ -127,14 +130,17 @@ func (s *permissionService) Check(ctx context.Context, accountId int64, module, 
 
 // CheckModule checks whether an account has access to a logical module. This is
 // the primary enforcement query for the per-module RBAC model: it returns true
-// if any role assigned to the account grants any active permission in the module.
+// if any ACTIVE role assigned to the account grants any active permission in the
+// module. Disabling a role or a permission therefore revokes access immediately.
 func (s *permissionService) CheckModule(ctx context.Context, accountId int64, module string) (bool, error) {
 	count, err := g.DB().Model("permission").
 		LeftJoin("role_permission", "permission.permission_id = role_permission.permission_id").
 		LeftJoin("account_role", "role_permission.role_id = account_role.role_id").
+		LeftJoin("role", "account_role.role_id = role.role_id").
 		Where("account_role.account_id = ?", accountId).
 		Where("permission.module = ?", module).
 		Where("permission.status = ?", 1).
+		Where("role.status = ?", 1).
 		Count()
 	if err != nil {
 		return false, err

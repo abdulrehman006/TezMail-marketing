@@ -91,6 +91,91 @@
 			"roles": "ロール"
 		}
 	},
+	"rbac": {
+		"status": {
+			"enabled": "有効",
+			"disabled": "無効"
+		},
+		"api": {
+			"loading": {
+				"saving": "保存中です...",
+				"deleting": "削除中です..."
+			}
+		},
+		"account": {
+			"actions": {
+				"add": "アカウント追加",
+				"resetPassword": "パスワードをリセット"
+			},
+			"search": {
+				"placeholder": "ユーザー名で検索"
+			},
+			"columns": {
+				"username": "ユーザー名",
+				"email": "メール",
+				"status": "ステータス",
+				"createTime": "作成日時"
+			},
+			"form": {
+				"addTitle": "アカウント追加",
+				"editTitle": "アカウント編集",
+				"username": "ユーザー名",
+				"usernamePlaceholder": "ユーザー名を入力",
+				"email": "メール",
+				"emailPlaceholder": "メールアドレスを入力",
+				"password": "パスワード",
+				"passwordPlaceholder": "8文字以上",
+				"roles": "ロール",
+				"rolesPlaceholder": "1つ以上のロールを選択",
+				"status": "有効"
+			},
+			"validation": {
+				"usernameRequired": "ユーザー名を入力してください",
+				"emailRequired": "メールアドレスを入力してください",
+				"emailInvalid": "メールの形式が正しくありません",
+				"passwordLength": "パスワードは8文字以上で入力してください"
+			},
+			"password": {
+				"title": "{name} のパスワードをリセット",
+				"newPassword": "新しいパスワード"
+			},
+			"delete": {
+				"title": "アカウント削除",
+				"confirm": "アカウント [{name}] を削除してもよろしいですか？"
+			}
+		},
+		"role": {
+			"actions": {
+				"add": "ロール追加"
+			},
+			"search": {
+				"placeholder": "ロール名で検索"
+			},
+			"columns": {
+				"name": "ロール名",
+				"description": "説明",
+				"status": "ステータス",
+				"createTime": "作成日時"
+			},
+			"form": {
+				"addTitle": "ロール追加",
+				"editTitle": "ロール編集",
+				"name": "ロール名",
+				"namePlaceholder": "ロール名を入力",
+				"description": "説明",
+				"descriptionPlaceholder": "このロールの用途は？",
+				"permissions": "アクセス可能なモジュール",
+				"status": "有効"
+			},
+			"validation": {
+				"nameRequired": "ロール名を入力してください"
+			},
+			"delete": {
+				"title": "ロール削除",
+				"confirm": "ロール [{name}] を削除してもよろしいですか？"
+			}
+		}
+	},
 	"login": {
 		"title": "TezMail",
 		"form": {
