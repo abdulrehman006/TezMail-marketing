@@ -24,7 +24,7 @@ import { useSetData } from '../../hooks/useSetData'
 import { useNormalForm } from '../style/useNormalForm'
 
 import Collapse from '../shared/Collapse.vue'
-import ImageUrl from '../style/Image.vue'
+import ImageSource from '../style/ImageSource.vue'
 import ImageLink from '../style/Link.vue'
 import ImageTitle from '../style/Title.vue'
 
@@ -71,7 +71,7 @@ watch(
 const [ImageForm] = useNormalForm([
 	{
 		attrKey: 'custom',
-		render: () => <ImageUrl v-model:value={attr.value.src} />,
+		render: () => <ImageSource v-model:value={attr.value.src} />,
 	},
 	{
 		attrKey: 'widthAuto',

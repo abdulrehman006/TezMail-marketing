@@ -55,6 +55,11 @@ const componentsPreset = ref<MenuBlock[]>([
 		name: 'Menu',
 		key: '0',
 	},
+	{
+		type: 'table',
+		name: 'Table',
+		key: '0',
+	},
 	// {
 	// 	type: 'html',
 	// 	name: 'HTML',

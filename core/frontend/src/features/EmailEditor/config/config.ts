@@ -393,6 +393,50 @@ export const menuConfig: BaseConfig = {
 	},
 }
 
+export const tableConfig: BaseConfig = {
+	key: '',
+	name: 'Table',
+	type: 'table',
+	meta: {
+		version: '',
+		createdAt: '',
+		updatedAt: '',
+	},
+	attr: {
+		rows: [
+			['Header 1', 'Header 2', 'Header 3'],
+			['Cell', 'Cell', 'Cell'],
+			['Cell', 'Cell', 'Cell'],
+		],
+		tableHeader: true,
+		borderColor: '#dddddd',
+		borderWidth: '1px',
+		headerBg: '#f4f4f4',
+		cellPadding: '8px',
+	},
+	style: {
+		display: 'inline-block',
+		width: '100%',
+		color: '#333',
+		fontWeight: 'normal',
+		fontSize: '14px',
+		lineHeight: '120%',
+		letterSpacing: '0px',
+		boxSizing: 'border-box',
+	},
+	containerStyle: {
+		textAlign: 'left',
+		padding: {
+			more: false,
+			all: '10px',
+			top: '0',
+			left: '0',
+			right: '0',
+			bottom: '0',
+		},
+	},
+}
+
 export const baseConfigMap = new Map<BlockType, BaseConfig>([
 	['button', buttonConfig],
 	['link', linkConfig],
@@ -401,6 +445,7 @@ export const baseConfigMap = new Map<BlockType, BaseConfig>([
 	['text', textConfig],
 	['image', imageConfig],
 	['menu', menuConfig],
+	['table', tableConfig],
 ])
 
 export const copyrightVNode = null
