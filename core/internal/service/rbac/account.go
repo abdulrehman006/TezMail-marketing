@@ -215,6 +215,7 @@ func (s *accountService) GetRoles(ctx context.Context, accountId int64) ([]model
 	err := g.DB().Model("role").
 		LeftJoin("account_role", "role.role_id=account_role.role_id").
 		Where("account_role.account_id = ?", accountId).
+		Fields("role.*"). // qualify: both tables have role_id, unqualified is ambiguous
 		Scan(&roles)
 	return roles, err
 }
@@ -226,6 +227,7 @@ func (s *accountService) GetPermissions(ctx context.Context, accountId int64) ([
 		LeftJoin("role_permission", "permission.permission_id=role_permission.permission_id").
 		LeftJoin("account_role", "role_permission.role_id=account_role.role_id").
 		Where("account_role.account_id = ?", accountId).
+		Fields("permission.*"). // qualify: role_permission also has permission_id
 		Scan(&permissions)
 	return permissions, err
 }

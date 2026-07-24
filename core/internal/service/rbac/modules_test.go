@@ -27,6 +27,10 @@ func TestModuleForPath(t *testing.T) {
 		{"/api/role/list", "system", false},
 		{"/api/permission/list", "system", false},
 
+		// Changing your OWN password must be reachable by any authenticated user,
+		// even though /account/* otherwise maps to the gated "system" module.
+		{"/api/account/password", "", true},
+
 		// Self-service / pre-login endpoints are never gated.
 		{"/api/login", "", true},
 		{"/api/logout", "", true},

@@ -8,7 +8,6 @@ import (
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/util/gconv"
 
-	"billionmail-core/internal/service/public"
 	"billionmail-core/internal/service/rbac"
 )
 
@@ -41,11 +40,15 @@ func (m *RBACMiddleware) PermissionCheck(r *ghttp.Request) {
 		return
 	}
 
-	// Must be authenticated (JWT middleware sets this).
+	// If the JWT middleware did not set an account id, this is a public route it
+	// deliberately skipped (unsubscribe, subscribe/submit, the send API, the
+	// language switch, etc.). JWT already 401s protected routes that lack a
+	// valid token before this middleware runs, so reaching here with no account
+	// id means the route is public — let it through untouched. (Returning 401
+	// here would break every public endpoint.)
 	accountIdVar := r.GetCtxVar("accountId")
 	if accountIdVar == nil {
-		r.Response.WriteJson(public.CodeMap[401])
-		r.Exit()
+		r.Middleware.Next()
 		return
 	}
 	accountId := gconv.Int64(accountIdVar)

@@ -82,6 +82,14 @@ var selfServiceSegments = map[string]struct{}{
 	"languages":         {},
 }
 
+// selfServicePaths are exact API paths any authenticated user may call even
+// though their segment maps to a gated module. /account/password lives under
+// the "system" module for management, but a user must always be able to change
+// their OWN password — the controller enforces caller==target for non-admins.
+var selfServicePaths = map[string]struct{}{
+	"/api/account/password": {},
+}
+
 // firstAPISegment returns the <seg> in /api/<seg>/... (or "" if not an API path).
 func firstAPISegment(path string) string {
 	parts := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 3)
@@ -95,6 +103,9 @@ func firstAPISegment(path string) string {
 // it. selfServe is true for auth/public paths that must always be allowed;
 // when selfServe is false and module is "", the path is not gated (allow).
 func ModuleForPath(path string) (module string, selfServe bool) {
+	if _, ok := selfServicePaths[path]; ok {
+		return "", true
+	}
 	seg := firstAPISegment(path)
 	if seg == "" {
 		// Not an /api/ path — never reached by the API middleware, but be safe.

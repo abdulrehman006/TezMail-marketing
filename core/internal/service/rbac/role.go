@@ -129,6 +129,7 @@ func (s *roleService) GetPermissions(ctx context.Context, roleId int64) ([]model
 	err := g.DB().Model("permission").
 		LeftJoin("role_permission", "permission.permission_id = role_permission.permission_id").
 		Where("role_permission.role_id = ?", roleId).
+		Fields("permission.*"). // qualify: role_permission also has permission_id
 		Scan(&permissions)
 	return permissions, err
 }
