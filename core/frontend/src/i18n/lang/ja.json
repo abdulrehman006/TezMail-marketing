@@ -86,7 +86,9 @@
 			"service": "Service",
 			"logs": "Logs",
 			"operation_logs": "Operation Logs",
-			"error_logs": "Error Logs"
+			"error_logs": "Error Logs",
+			"accounts": "アカウント",
+			"roles": "ロール"
 		}
 	},
 	"login": {

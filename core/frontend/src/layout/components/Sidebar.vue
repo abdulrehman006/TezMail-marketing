@@ -66,9 +66,34 @@ const activeMenuKey = computed(() => {
 	return String(route.meta?.key || '')
 })
 
-// 路由菜单
+// Fallback map of menu key -> logical RBAC module, so existing route modules
+// don't each need a meta.module. A route's own meta.module takes precedence.
+const keyToModule: Record<string, string> = {
+	overview: 'dashboard',
+	market: 'campaigns',
+	api: 'campaigns',
+	template: 'templates',
+	contacts: 'contacts',
+	domain: 'domains',
+	mailbox: 'mailboxes',
+	smtp: 'mail_services',
+	logs: 'logs',
+	settings: 'settings',
+	accounts: 'system',
+	roles: 'system',
+}
+
+// 路由菜单 — hidden routes are dropped, and routes tied to an RBAC module the
+// current user cannot access are hidden too (the backend still enforces access;
+// this only keeps the menu clean). Routes with no known module stay visible.
 const routerMenus = computed(() => {
-	return menuStore.menuList.filter(route => route.meta && !route.meta.hidden)
+	return menuStore.menuList.filter(route => {
+		if (!route.meta || route.meta.hidden) return false
+		const key = String(route.meta?.key || '')
+		const module = String(route.meta?.module || keyToModule[key] || '')
+		if (module && !userStore.hasModule(module)) return false
+		return true
+	})
 })
 
 // 导航菜单选项
@@ -113,6 +138,8 @@ const iconMap: Record<string, VNodeChild> = {
 	settings: <i class="i-mdi-settings-outline"></i>,
 	template: <i class="i-mdi-settings-outline"></i>,
 	logs: <i class="i-icon-park-outline:log"></i>,
+	accounts: <i class="i-mdi-account-cog-outline"></i>,
+	roles: <i class="i-mdi-shield-account-outline"></i>,
 	logout: <i class="i-mdi-logout"></i>,
 }
 
@@ -135,6 +162,10 @@ const handleUpdateMenu = (key: string) => {
 
 onMounted(() => {
 	menuStore.setMenuList(menuList)
+	// Refresh roles/permissions on load so the menu reflects the latest access.
+	if (userStore.isLogin) {
+		userStore.fetchCurrentUser()
+	}
 })
 </script>
 

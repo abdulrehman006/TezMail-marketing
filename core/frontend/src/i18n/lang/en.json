@@ -95,7 +95,94 @@
 			"service": "Service",
 			"logs": "Logs",
 			"operation_logs": "Operation Logs",
-			"error_logs": "Error Logs"
+			"error_logs": "Error Logs",
+			"accounts": "Accounts",
+			"roles": "Roles"
+		}
+	},
+	"rbac": {
+		"status": {
+			"enabled": "Enabled",
+			"disabled": "Disabled"
+		},
+		"api": {
+			"loading": {
+				"saving": "Saving, please wait...",
+				"deleting": "Deleting, please wait..."
+			}
+		},
+		"account": {
+			"actions": {
+				"add": "Add Account",
+				"resetPassword": "Reset Password"
+			},
+			"search": {
+				"placeholder": "Search username"
+			},
+			"columns": {
+				"username": "Username",
+				"email": "Email",
+				"status": "Status",
+				"createTime": "Created"
+			},
+			"form": {
+				"addTitle": "Add Account",
+				"editTitle": "Edit Account",
+				"username": "Username",
+				"usernamePlaceholder": "Enter username",
+				"email": "Email",
+				"emailPlaceholder": "Enter email address",
+				"password": "Password",
+				"passwordPlaceholder": "At least 8 characters",
+				"roles": "Roles",
+				"rolesPlaceholder": "Select one or more roles",
+				"status": "Enabled"
+			},
+			"validation": {
+				"usernameRequired": "Please enter a username",
+				"emailRequired": "Please enter an email address",
+				"emailInvalid": "Email format is not correct",
+				"passwordLength": "Password must be at least 8 characters"
+			},
+			"password": {
+				"title": "Reset password for {name}",
+				"newPassword": "New Password"
+			},
+			"delete": {
+				"title": "Delete Account",
+				"confirm": "Are you sure you want to delete account [{name}]?"
+			}
+		},
+		"role": {
+			"actions": {
+				"add": "Add Role"
+			},
+			"search": {
+				"placeholder": "Search role name"
+			},
+			"columns": {
+				"name": "Role Name",
+				"description": "Description",
+				"status": "Status",
+				"createTime": "Created"
+			},
+			"form": {
+				"addTitle": "Add Role",
+				"editTitle": "Edit Role",
+				"name": "Role Name",
+				"namePlaceholder": "Enter role name",
+				"description": "Description",
+				"descriptionPlaceholder": "What is this role for?",
+				"permissions": "Accessible Modules",
+				"status": "Enabled"
+			},
+			"validation": {
+				"nameRequired": "Please enter a role name"
+			},
+			"delete": {
+				"title": "Delete Role",
+				"confirm": "Are you sure you want to delete role [{name}]?"
+			}
 		}
 	},
 	"login": {

@@ -42,3 +42,10 @@ export const logout = () => {
 export const getValidateCode = () => {
 	return instance.get('/get_validate_code')
 }
+
+/**
+ * @description Get the current user's profile, roles and accessible modules
+ */
+export const getCurrentUser = () => {
+	return instance.get('/current-user')
+}

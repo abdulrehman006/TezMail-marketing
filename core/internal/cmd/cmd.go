@@ -232,11 +232,12 @@ var (
 					r.Middleware.Next()
 				})
 
-				// Add JWT middleware
+				// Add JWT middleware (authentication: sets accountId + roles)
 				group.Middleware(rbac2.JWT().JWTAuthMiddleware)
 
-				// Add RBAC middleware
-				// group.Middleware(middlewares.NewRBACMiddleware().PermissionCheck)
+				// Add RBAC middleware (authorization: per-module access control).
+				// Runs after JWT; the built-in admin role bypasses all checks.
+				group.Middleware(middlewares.NewRBACMiddleware().PermissionCheck)
 
 				// group.Middleware(ghttp.MiddlewareHandlerResponse)
 

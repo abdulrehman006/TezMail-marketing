@@ -172,6 +172,22 @@ func init() {
 			"role_id":    adminRoleId,
 		})
 
+		// Seed one permission per logical module (idempotent) and grant the
+		// full set to the admin role. The admin role also bypasses all checks
+		// in the middleware, but keeping the DB in sync means the role editor
+		// shows admin as fully-permissioned and the model degrades safely if
+		// the bypass is ever removed.
+		if err := rbac.SeedModulePermissions(context.Background()); err != nil {
+			g.Log().Error(context.Background(), "Failed to seed module permissions:", err)
+			return
+		}
+
+		if permIds, err := rbac.ModulePermissionIds(context.Background()); err == nil && len(permIds) > 0 {
+			if err := rbac.Role().BindPermissions(context.Background(), adminRoleId, permIds); err != nil {
+				g.Log().Error(context.Background(), "Failed to grant permissions to admin role:", err)
+			}
+		}
+
 		// Generate default API Token
 		var api_token string
 		if err = public.OptionsMgrInstance.GetOption(context.Background(), "API_TOKEN", &api_token); err != nil || api_token == "" {
