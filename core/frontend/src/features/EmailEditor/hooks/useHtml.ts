@@ -232,22 +232,62 @@ export const useHtml = () => {
 	}
 
 	/**
-	 * @description 图片组件
+	 * @description Email content width in px (from the page config); used to
+	 * derive a pixel `width` attribute for images so Outlook sizes them.
+	 */
+	const emailContentWidthPx = () => {
+		const w = pageConfig.value.style.width || '600px'
+		const n = parseInt(w, 10)
+		return isNaN(n) ? 600 : n
+	}
+
+	/**
+	 * @description Resolve a pixel width for an image's `width` attribute from its
+	 * configured CSS width (px kept as-is, % scaled against the email width).
+	 */
+	const imageAttrWidthPx = (config: BaseConfig) => {
+		const w = config.style.width || '100%'
+		if (w.endsWith('px')) {
+			const n = parseInt(w, 10)
+			return isNaN(n) ? emailContentWidthPx() : n
+		}
+		if (w.endsWith('%')) {
+			const p = parseInt(w, 10)
+			return Math.round((emailContentWidthPx() * (isNaN(p) ? 100 : p)) / 100)
+		}
+		return emailContentWidthPx()
+	}
+
+	/**
+	 * @description 图片组件 — email-safe <img> (Outlook width attr, block, responsive)
 	 */
 	const imageToElement = (config: BaseConfig) => {
 		const elDom = document.createElement('img')
 		elDom.src = config.attr.src ?? ''
 		elDom.alt = config.attr.alt ?? ''
+		// Outlook (Word engine) renders at natural size without an explicit width attr.
+		elDom.setAttribute('width', String(imageAttrWidthPx(config)))
+		// Suppress the border old Outlook draws around linked images.
+		elDom.setAttribute('border', '0')
+
 		if (config.attr.href) {
 			const aDom = document.createElement('a')
 			aDom.href = config.attr.href ?? ''
 			aDom.target = config.attr.target ?? ''
-			elDom.style.width = '100%'
-			aDom.appendChild(elDom)
 			setElementStyle(aDom, config.style)
+			// Email overrides applied AFTER config styles so they win.
+			elDom.style.width = '100%'
+			elDom.style.maxWidth = '100%'
+			elDom.style.height = 'auto'
+			elDom.style.display = 'block'
+			aDom.appendChild(elDom)
 			return aDom
 		}
+
 		setElementStyle(elDom, config.style)
+		elDom.style.maxWidth = '100%'
+		elDom.style.height = 'auto'
+		elDom.style.display = 'block'
 		return elDom
 	}
 
@@ -275,12 +315,18 @@ export const useHtml = () => {
 		const rowsData = a.rows ?? []
 		const border = `${a.borderWidth || '1px'} solid ${a.borderColor || '#dddddd'}`
 		const padding = a.cellPadding || '8px'
+		const fontFamily =
+			config.style.fontFamily || pageConfig.value.style.fontFamily || 'Arial, sans-serif'
 
 		const table = document.createElement('table')
 		setElementStyle(table, config.style)
 		table.style.display = 'table'
 		table.style.width = config.style.width || '100%'
 		table.style.borderCollapse = 'collapse'
+		// Outlook ignores CSS border-collapse/spacing; set the HTML attributes.
+		table.setAttribute('cellpadding', '0')
+		table.setAttribute('cellspacing', '0')
+		table.setAttribute('border', '0')
 
 		const tbody = document.createElement('tbody')
 		rowsData.forEach((row, r) => {
@@ -292,9 +338,14 @@ export const useHtml = () => {
 				cell.style.padding = padding
 				cell.style.textAlign = 'left'
 				cell.style.verticalAlign = 'top'
+				// Some clients (Outlook) don't inherit font-family from <table>.
+				cell.style.fontFamily = fontFamily
+				// Keep long unbroken content from blowing out the table width.
+				cell.style.wordBreak = 'break-word'
 				if (isHeaderRow) {
 					cell.style.backgroundColor = a.headerBg || '#f4f4f4'
 					cell.style.fontWeight = 'bold'
+					cell.setAttribute('scope', 'col')
 				}
 				cell.textContent = text
 				tr.appendChild(cell)
