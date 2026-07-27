@@ -56,21 +56,29 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 	if err != nil && err != sql.ErrNoRows {
 		g.Log().Error(ctx, "Failed to get contact: %v", err)
 	}
+	// Always render the template so {{ .UnsubscribeURL }} (and any merge tags)
+	// resolve — even when the test recipient is NOT a stored contact, which is
+	// the common case for test sends to externally-hosted addresses. The engine
+	// tolerates a nil contact (subscriber vars resolve to empty / are cleaned)
+	// and always substitutes UnsubscribeURL from the URL passed in. Previously
+	// this ran only for known contacts, so a test to a non-contact delivered the
+	// literal "{{ .UnsubscribeURL }}" text in the email body.
+	var contactPtr *entity.Contact
 	if contact.Id != 0 {
-		engine := batch_mail.GetTemplateEngine()
-		content, err = engine.RenderEmailTemplate(ctx, content, &contact, nil, unsubscribeJumpURL)
-		if err != nil {
-			res.Code = 500
-			res.SetError(gerror.New(public.LangCtx(ctx, "failed to render email content: {}", err)))
-			return
-		}
-
-		subject, err = engine.RenderEmailTemplate(ctx, subject, &contact, nil, unsubscribeJumpURL)
-		if err != nil {
-			res.Code = 500
-			res.SetError(gerror.New(public.LangCtx(ctx, "failed to render email subject: {}", err)))
-			return
-		}
+		contactPtr = &contact
+	}
+	engine := batch_mail.GetTemplateEngine()
+	content, err = engine.RenderEmailTemplate(ctx, content, contactPtr, nil, unsubscribeJumpURL)
+	if err != nil {
+		res.Code = 500
+		res.SetError(gerror.New(public.LangCtx(ctx, "failed to render email content: {}", err)))
+		return
+	}
+	subject, err = engine.RenderEmailTemplate(ctx, subject, contactPtr, nil, unsubscribeJumpURL)
+	if err != nil {
+		res.Code = 500
+		res.SetError(gerror.New(public.LangCtx(ctx, "failed to render email subject: {}", err)))
+		return
 	}
 
 	// The contact lookup above tolerates sql.ErrNoRows (a test address need not
