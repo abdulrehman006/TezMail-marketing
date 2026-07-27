@@ -335,8 +335,8 @@ export const useHtml = () => {
 				const cell = document.createElement(isHeaderRow ? 'th' : 'td')
 				cell.style.border = border
 				cell.style.padding = padding
-				cell.style.textAlign = 'left'
-				cell.style.verticalAlign = 'top'
+				cell.style.textAlign = a.cellAlign || 'left'
+				cell.style.verticalAlign = a.cellVAlign || 'top'
 				// Some clients (Outlook) don't inherit font-family from <table>.
 				cell.style.fontFamily = fontFamily
 				// Keep long unbroken content from blowing out the table width.

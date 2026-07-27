@@ -46,6 +46,24 @@
 					<span class="text-13px">Cell padding</span>
 					<n-input v-model:value="attr.cellPadding" size="small" placeholder="8px" class="w-120px" />
 				</div>
+				<div class="flex items-center justify-between">
+					<span class="text-13px">Text align</span>
+					<n-select
+						v-model:value="attr.cellAlign"
+						:options="alignOptions"
+						size="small"
+						class="w-120px">
+					</n-select>
+				</div>
+				<div class="flex items-center justify-between">
+					<span class="text-13px">Vertical align</span>
+					<n-select
+						v-model:value="attr.cellVAlign"
+						:options="vAlignOptions"
+						size="small"
+						class="w-120px">
+					</n-select>
+				</div>
 				<div class="text-12px text-[var(--color-text-3)]">Click a cell in the canvas to edit its text.</div>
 			</div>
 		</n-collapse-item>
@@ -133,4 +151,17 @@ const [TextForm] = useNormalForm([
 ])
 
 const [ContainerForm] = useNormalForm([{ attrKey: 'textAlign' }, { attrKey: 'padding' }])
+
+// Cell content alignment options (table-wide — the row model stores plain text,
+// so alignment applies to every cell).
+const alignOptions = [
+	{ label: 'Left', value: 'left' },
+	{ label: 'Center', value: 'center' },
+	{ label: 'Right', value: 'right' },
+]
+const vAlignOptions = [
+	{ label: 'Top', value: 'top' },
+	{ label: 'Middle', value: 'middle' },
+	{ label: 'Bottom', value: 'bottom' },
+]
 </script>

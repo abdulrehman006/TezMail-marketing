@@ -72,8 +72,8 @@ const cellStyle = (r: number) => {
 	const style: Record<string, string> = {
 		border: `${a.borderWidth || '1px'} solid ${a.borderColor || '#dddddd'}`,
 		padding: a.cellPadding || '8px',
-		textAlign: 'left',
-		verticalAlign: 'top',
+		textAlign: a.cellAlign || 'left',
+		verticalAlign: a.cellVAlign || 'top',
 		wordBreak: 'break-word',
 	}
 	if (isHeader(r)) {

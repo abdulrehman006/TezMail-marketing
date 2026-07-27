@@ -135,6 +135,8 @@ export type BaseAttr = {
 	borderWidth?: string
 	headerBg?: string
 	cellPadding?: string
+	cellAlign?: 'left' | 'center' | 'right' // cell text alignment
+	cellVAlign?: 'top' | 'middle' | 'bottom' // cell vertical alignment
 }
 
 /**

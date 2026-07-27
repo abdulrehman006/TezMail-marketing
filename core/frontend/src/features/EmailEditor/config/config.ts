@@ -413,6 +413,8 @@ export const tableConfig: BaseConfig = {
 		borderWidth: '1px',
 		headerBg: '#f4f4f4',
 		cellPadding: '8px',
+		cellAlign: 'left',
+		cellVAlign: 'top',
 	},
 	style: {
 		display: 'inline-block',
