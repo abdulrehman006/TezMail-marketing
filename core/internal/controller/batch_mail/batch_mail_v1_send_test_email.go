@@ -6,6 +6,7 @@ import (
 	"billionmail-core/internal/service/batch_mail"
 	"billionmail-core/internal/service/domains"
 	"billionmail-core/internal/service/mail_service"
+	"billionmail-core/internal/service/ses_api"
 	"database/sql"
 	"strings"
 
@@ -21,14 +22,9 @@ import (
 func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailReq) (res *v1.SendTestEmailRes, err error) {
 
 	res = &v1.SendTestEmailRes{}
-	sender, err := mail_service.NewEmailSenderWithLocal(req.Addresser)
-	if err != nil {
-		res.Code = 400
-		res.SetError(gerror.New(public.LangCtx(ctx, "create email sender failed: : {}", err.Error())))
-		return
-	}
-	defer sender.Close()
 
+	// Load the template first — this does not depend on the delivery method,
+	// so we resolve the sender (SES vs local) only after the content is ready.
 	var template entity.EmailTemplate
 
 	err = g.DB().Model("email_templates").
@@ -77,6 +73,51 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 		}
 	}
 
+	// The contact lookup above tolerates sql.ErrNoRows (a test address need not
+	// be a known contact). Clear any leftover tolerated error so it cannot leak
+	// out of an early SES return below.
+	err = nil
+
+	// ----------------------------------------------------------------------
+	// Delivery routing (mirrors the campaign path in task_executor.go):
+	//   - If an SES account is ACTIVE for the sender's domain, send the test
+	//     through the SES API. This makes the test match how the real campaign
+	//     is delivered and lets it reach recipients on externally-hosted
+	//     domains that this server does NOT host locally (which previously
+	//     produced a "550 User unknown in virtual mailbox table" from Postfix).
+	//   - Otherwise, fall back to the local Postfix path (original behaviour,
+	//     byte-for-byte unchanged).
+	// ----------------------------------------------------------------------
+	if ses_api.GetAccountForDomain(req.Addresser) != nil {
+		sent, sesErr := sendTestEmailViaSES(ctx, req.Addresser, req.Recipient, subject, content)
+		if sent {
+			if sesErr != nil {
+				res.SetError(gerror.New(public.LangCtx(ctx, "send test email via SES to {} failed: {}", req.Recipient, sesErr.Error())))
+				err = sesErr
+				return
+			}
+			_ = public.WriteLog(ctx, public.LogParams{
+				Type: consts.LOGTYPE.Task,
+				Log:  "Send test email (SES) :" + subject + " to " + req.Recipient + " successfully",
+			})
+			res.SetSuccess(public.LangCtx(ctx, "send email successfully"))
+			return
+		}
+		// sent == false: a SES sender could not be created for this domain.
+		// Fall through to local SMTP, exactly like the campaign executor does.
+		g.Log().Warning(ctx, "SES configured for", req.Addresser,
+			"but SES sender unavailable; falling back to local SMTP for test email")
+	}
+
+	// ---- Local Postfix path (original behaviour) --------------------------
+	sender, err := mail_service.NewEmailSenderWithLocal(req.Addresser)
+	if err != nil {
+		res.Code = 400
+		res.SetError(gerror.New(public.LangCtx(ctx, "create email sender failed: : {}", err.Error())))
+		return
+	}
+	defer sender.Close()
+
 	message := mail_service.NewMessage(subject, content)
 	message.SetMessageID(sender.GenerateMessageID())
 
@@ -94,4 +135,33 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 
 	res.SetSuccess(public.LangCtx(ctx, "send email successfully"))
 	return
+}
+
+// sendTestEmailViaSES sends the test email through the SES API for the sender's
+// domain. It returns sent=false (with a nil error) ONLY when a SES sender could
+// not be created — signalling the caller to fall back to local SMTP, the same
+// contract the campaign executor (task_executor.go) uses. When sent=true, err
+// reflects the actual SES send result (nil on success).
+func sendTestEmailViaSES(ctx context.Context, addresser, recipient, subject, content string) (sent bool, err error) {
+	sesSender, accountName, cerr := ses_api.GetSenderForEmail(ctx, addresser)
+	if cerr != nil {
+		g.Log().Warning(ctx, "Failed to create SES sender for test email", addresser, ":", cerr)
+		return false, nil
+	}
+
+	result := sesSender.SendEmail(ctx, &ses_api.SendEmailInput{
+		From:     addresser,
+		To:       []string{recipient},
+		Subject:  subject,
+		HtmlBody: content,
+	})
+	if result == nil {
+		return true, gerror.New("SES returned no result")
+	}
+	if !result.Success {
+		return true, result.Error
+	}
+
+	g.Log().Debug(ctx, "Test email sent via SES API (account:", accountName, ") to:", recipient)
+	return true, nil
 }
