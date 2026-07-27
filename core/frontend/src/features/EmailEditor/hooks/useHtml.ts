@@ -232,41 +232,30 @@ export const useHtml = () => {
 	}
 
 	/**
-	 * @description Email content width in px (from the page config); used to
-	 * derive a pixel `width` attribute for images so Outlook sizes them.
+	 * @description Resolve a pixel width for an image's `width` attribute — ONLY
+	 * for an explicit px width. A percentage/auto width has no reliable pixel
+	 * value (especially inside a multi-column cell); emitting a guessed one would
+	 * overflow in Outlook, so we return null and let the CSS width handle it.
 	 */
-	const emailContentWidthPx = () => {
-		const w = pageConfig.value.style.width || '600px'
-		const n = parseInt(w, 10)
-		return isNaN(n) ? 600 : n
-	}
-
-	/**
-	 * @description Resolve a pixel width for an image's `width` attribute from its
-	 * configured CSS width (px kept as-is, % scaled against the email width).
-	 */
-	const imageAttrWidthPx = (config: BaseConfig) => {
-		const w = config.style.width || '100%'
+	const imageAttrPxWidth = (config: BaseConfig): number | null => {
+		const w = config.style.width || ''
 		if (w.endsWith('px')) {
 			const n = parseInt(w, 10)
-			return isNaN(n) ? emailContentWidthPx() : n
+			return isNaN(n) ? null : n
 		}
-		if (w.endsWith('%')) {
-			const p = parseInt(w, 10)
-			return Math.round((emailContentWidthPx() * (isNaN(p) ? 100 : p)) / 100)
-		}
-		return emailContentWidthPx()
+		return null
 	}
 
 	/**
-	 * @description 图片组件 — email-safe <img> (Outlook width attr, block, responsive)
+	 * @description 图片组件 — email-safe <img>. Adds an Outlook px width attribute
+	 * for fixed-width images, border="0", and responsive max-width/height. Display
+	 * and alignment are left UNCHANGED so existing centering (via the container's
+	 * text-align) keeps working — forcing display:block would break it.
 	 */
 	const imageToElement = (config: BaseConfig) => {
 		const elDom = document.createElement('img')
 		elDom.src = config.attr.src ?? ''
 		elDom.alt = config.attr.alt ?? ''
-		// Outlook (Word engine) renders at natural size without an explicit width attr.
-		elDom.setAttribute('width', String(imageAttrWidthPx(config)))
 		// Suppress the border old Outlook draws around linked images.
 		elDom.setAttribute('border', '0')
 
@@ -275,19 +264,25 @@ export const useHtml = () => {
 			aDom.href = config.attr.href ?? ''
 			aDom.target = config.attr.target ?? ''
 			setElementStyle(aDom, config.style)
-			// Email overrides applied AFTER config styles so they win.
+			// Preserve original behaviour (img fills the link) + add responsiveness.
 			elDom.style.width = '100%'
 			elDom.style.maxWidth = '100%'
 			elDom.style.height = 'auto'
-			elDom.style.display = 'block'
 			aDom.appendChild(elDom)
 			return aDom
 		}
 
 		setElementStyle(elDom, config.style)
+		// Responsive, without touching display/alignment.
 		elDom.style.maxWidth = '100%'
-		elDom.style.height = 'auto'
-		elDom.style.display = 'block'
+		if (!config.style.height) {
+			elDom.style.height = 'auto'
+		}
+		// Outlook needs a px width attribute; emit it only for an explicit px width.
+		const pxWidth = imageAttrPxWidth(config)
+		if (pxWidth !== null) {
+			elDom.setAttribute('width', String(pxWidth))
+		}
 		return elDom
 	}
 
@@ -315,8 +310,12 @@ export const useHtml = () => {
 		const rowsData = a.rows ?? []
 		const border = `${a.borderWidth || '1px'} solid ${a.borderColor || '#dddddd'}`
 		const padding = a.cellPadding || '8px'
+		// Match the email's own default font (see columnsSourceToTable) so table
+		// cells never render in a different face than the rest of the message.
 		const fontFamily =
-			config.style.fontFamily || pageConfig.value.style.fontFamily || 'Arial, sans-serif'
+			config.style.fontFamily ||
+			pageConfig.value.style.fontFamily ||
+			'PingFang SC, Microsoft YaHei'
 
 		const table = document.createElement('table')
 		setElementStyle(table, config.style)
