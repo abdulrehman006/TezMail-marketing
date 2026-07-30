@@ -197,8 +197,6 @@ func init() {
 			`CREATE INDEX IF NOT EXISTS idx_api_mail_logs_api_id ON api_mail_logs (api_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_api_mail_logs_recipient ON api_mail_logs (recipient)`,
 			`CREATE INDEX IF NOT EXISTS idx_api_mail_logs_message_id ON api_mail_logs (message_id)`,
-			// SES throttle/quota bounded-retry counter (idempotent for existing installs).
-			`ALTER TABLE recipient_info ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0`,
 			`CREATE INDEX IF NOT EXISTS idx_recipient_info_task_id ON recipient_info(task_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_recipient_info_is_sent ON recipient_info(is_sent)`,
 			`CREATE INDEX IF NOT EXISTS idx_recipient_info_message_id ON recipient_info(message_id)`,
@@ -220,6 +218,8 @@ func init() {
 		_ = AddColumnIfNotExists("bm_contacts", "attribs", "JSONB", "'{}'::jsonb", false)
 		_ = AddColumnIfNotExists("bm_contacts", "status", "INTEGER", "1", true)
 		_ = AddColumnIfNotExists("bm_contacts", "last_active_at", "INTEGER", "0", true)
+		// SES throttle/quota bounded-retry counter (non-fatal, idempotent).
+		_ = AddColumnIfNotExists("recipient_info", "retry_count", "INTEGER", "0", true)
 
 		//  api_mail_logs
 		_ = AddColumnIfNotExists("api_mail_logs", "status", "SMALLINT", "0", true)

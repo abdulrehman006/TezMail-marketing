@@ -1099,6 +1099,15 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 	failedIDs := make([]int, 0, batchSize)
 	deferIDs := make([]int, 0, batchSize) // SES throttled → defer + bounded retry
 
+	// SES gate: ONLY SES campaigns defer on throttle. Computed once, defensively.
+	// A local-SMTP campaign is never deferred — its failures keep the existing
+	// behaviour, so a local bounce whose text happens to contain "quota"/
+	// "exceeded" is unaffected (local-SMTP path untouched).
+	sesActive := false
+	if e.taskConfig != nil {
+		sesActive = safeGetSESAccount(e.taskConfig.Addresser) != nil
+	}
+
 	// create ticker to flush results
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
@@ -1227,7 +1236,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 			if result.Success {
 				successResults = append(successResults, result)
-			} else if isSESThrottleError(result.Error) {
+			} else if sesActive && isSESThrottleError(result.Error) {
 				// SES throttle/quota — defer + bounded retry instead of dropping.
 				deferIDs = append(deferIDs, result.RecipientID)
 				g.Log().Warningf(ctx, "recipient %d SES-throttled, deferring for retry: %v",
