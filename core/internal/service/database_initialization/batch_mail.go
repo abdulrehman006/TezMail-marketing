@@ -106,6 +106,7 @@ func init() {
                 message_id TEXT NOT NULL,
                 create_time INTEGER NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
                 group_id INTEGER NOT NULL DEFAULT 0, -- source recipient list this contact was reached through (multi-list); 0 = unknown/legacy
+                retry_count INTEGER NOT NULL DEFAULT 0, -- SES throttle/quota deferrals (bounded)
                 FOREIGN KEY (task_id) REFERENCES email_tasks(id) ON DELETE CASCADE,
                 UNIQUE(task_id, recipient)
             )`,
@@ -220,6 +221,8 @@ func init() {
 		_ = AddColumnIfNotExists("bm_contacts", "attribs", "JSONB", "'{}'::jsonb", false)
 		_ = AddColumnIfNotExists("bm_contacts", "status", "INTEGER", "1", true)
 		_ = AddColumnIfNotExists("bm_contacts", "last_active_at", "INTEGER", "0", true)
+		// SES throttle/quota bounded-retry counter (non-fatal, idempotent).
+		_ = AddColumnIfNotExists("recipient_info", "retry_count", "INTEGER", "0", true)
 
 		//  api_mail_logs
 		_ = AddColumnIfNotExists("api_mail_logs", "status", "SMALLINT", "0", true)
