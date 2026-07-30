@@ -1,7 +1,7 @@
 <template>
 	<div class="flex-1">
 		<n-select v-model:value="group" :options="groupOptions" :filterable="true" :clearable="clearable"
-			:disabled="disabled" :max-tag-count="'responsive'" :loading="loading"
+			:multiple="multiple" :disabled="disabled" :max-tag-count="'responsive'" :loading="loading"
 			:placeholder="$t('market.task.edit.recipientsPlaceholder')" @update:value="handleUpdateGroup">
 		</n-select>
 	</div>
@@ -23,7 +23,7 @@ import type { Group } from '@/views/contacts/group/types/base'
 
 import CreateGroup from './CreateGroup.vue'
 
-defineProps({
+const props = defineProps({
 	disabled: {
 		type: Boolean as PropType<boolean>,
 		default: false,
@@ -36,9 +36,14 @@ defineProps({
 		type: Boolean as PropType<boolean>,
 		default: false,
 	},
+	// When true the select accepts several lists (value is number[]).
+	multiple: {
+		type: Boolean as PropType<boolean>,
+		default: false,
+	},
 })
 
-const group = defineModel<number | null>('value', {
+const group = defineModel<number | number[] | null>('value', {
 	default: () => 0,
 })
 
@@ -63,8 +68,13 @@ const handleShowCreate = () => {
 	createModalApi.open()
 }
 
-const handleUpdateGroup = async (val: number, option: SelectOption) => {
-	label.value = `${option.label}`
+const handleUpdateGroup = (_val: number | number[], option: SelectOption | SelectOption[]) => {
+	if (props.multiple) {
+		const opts = Array.isArray(option) ? option : []
+		label.value = opts.map(o => `${o?.label ?? ''}`).filter(Boolean).join(', ')
+	} else {
+		label.value = option && !Array.isArray(option) ? `${option.label}` : ''
+	}
 }
 
 const getGroupOptions = async () => {

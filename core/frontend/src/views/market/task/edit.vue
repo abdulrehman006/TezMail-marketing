@@ -25,10 +25,11 @@
 								<n-input v-model:value="form.subject" :placeholder="$t('market.task.edit.subjectPlaceholder')">
 								</n-input>
 							</n-form-item>
-							<n-form-item :label="$t('market.task.edit.recipients')" type="group_ids">
+							<n-form-item :label="$t('market.task.edit.recipients')" path="group_ids">
 								<div class="flex-1">
 									<div class="flex items-center">
-										<group-select v-model:value="form.group_id" v-model:label="groupName" :disabled="isEdit">
+										<group-select multiple v-model:value="form.group_ids" v-model:label="groupName"
+											:disabled="isEdit" @update:value="() => getRecipientCount()">
 										</group-select>
 									</div>
 									<i18n-t class="mt-8px" tag="div" scope="global" keypath="market.task.edit.recipientsCount">
@@ -45,8 +46,8 @@
 									</n-select>
 								</n-form-item-gi>
 								<n-form-item-gi :span="18" :label="$t('market.task.edit.tags')" path="tag_ids">
-									<tag-select v-model:value="form.tag_ids" :group-id="form.group_id" :disabled="isEdit"
-										@update:value="() => getRecipientCount()">
+									<tag-select v-model:value="form.tag_ids" :group-id="form.group_ids[0] || 0"
+										:disabled="isEdit" @update:value="() => getRecipientCount()">
 									</tag-select>
 								</n-form-item-gi>
 							</n-grid>
@@ -168,8 +169,7 @@ import { FormRules } from 'naive-ui'
 import { useGlobalStore } from '@/store'
 import { useElementBounding } from '@vueuse/core'
 import { confirm, isObject, Message } from '@/utils'
-import { getContactTagCount } from '@/api/modules/contacts/group'
-import { addTask, getTaskDetails, sendTestEmail, updateTask } from '@/api/modules/market/task'
+import { addTask, getTaskDetails, recipientPreview, sendTestEmail, updateTask } from '@/api/modules/market/task'
 import { Task } from './interface'
 import { Template } from '../template/interface'
 
@@ -200,7 +200,7 @@ const form = reactive({
 	addresser: null as null | string,
 	full_name: '',
 	subject: '',
-	group_id: null as null | number,
+	group_ids: [] as number[],
 	template_id: null as null | number,
 	is_record: 1,
 	unsubscribe: 1,
@@ -251,7 +251,7 @@ const rules: FormRules = {
 	group_ids: {
 		trigger: 'change',
 		validator: () => {
-			if (!form.group_id) {
+			if (!form.group_ids.length) {
 				return new Error(t('market.task.edit.validation.recipientsRequired'))
 			}
 			return true
@@ -339,7 +339,7 @@ const handleSendTest = async () => {
 }
 
 const handleGoBack = () => {
-	if (form.subject || form.group_id) {
+	if (form.subject || form.group_ids.length) {
 		confirm({
 			title: t('market.task.edit.discard.title'),
 			content: t('market.task.edit.discard.content'),
@@ -352,19 +352,30 @@ const handleGoBack = () => {
 	}
 }
 
+let previewSeq = 0
 const getRecipientCount = async () => {
-	if (!form.group_id) {
+	if (!form.group_ids.length) {
+		previewSeq++ // invalidate any in-flight request so it can't overwrite 0
 		recipientsCount.value = 0
 		return
 	}
 
-	const res = await getContactTagCount({
-		group_id: form.group_id || 0,
-		tag_ids: form.tag_ids,
-		tag_logic: form.tag_logic,
-	})
-	if (isObject<{ total: number }>(res)) {
-		recipientsCount.value = res.total
+	// Deduplicated union count across all selected lists (matches what will send).
+	// Sequence guard: rapid list/tag changes must not leave a stale count.
+	const seq = ++previewSeq
+	try {
+		const res = await recipientPreview({
+			group_ids: form.group_ids,
+			group_id: form.group_ids[0] || 0,
+			tag_ids: form.tag_ids,
+			tag_logic: form.tag_logic,
+		})
+		if (seq !== previewSeq) return
+		if (isObject<{ total: number }>(res)) {
+			recipientsCount.value = res.total
+		}
+	} catch {
+		if (seq === previewSeq) recipientsCount.value = 0
 	}
 }
 
@@ -379,7 +390,8 @@ const getParams = () => {
 		addresser: form.addresser || '',
 		full_name: form.full_name,
 		subject: form.subject,
-		group_id: form.group_id || 0,
+		group_ids: form.group_ids,
+		group_id: form.group_ids[0] || 0,
 		template_id: form.template_id || 0,
 		is_record: form.is_record,
 		unsubscribe: form.unsubscribe,
@@ -435,7 +447,7 @@ const initForm = async () => {
 		form.addresser = res.addresser
 		form.full_name = res.full_name
 		form.subject = res.subject
-		form.group_id = res.group_id
+		form.group_ids = res.group_id ? [res.group_id] : []
 		// form.group_id = res.etypes.split(',').map(item => Number(item))
 		form.template_id = res.template_id
 		form.is_record = res.is_record
@@ -448,6 +460,8 @@ const initForm = async () => {
 		form.track_click = res.track_click
 		nextTick(() => {
 			form.tag_ids = res.tag_ids
+			// Reflect the loaded recipients in the count preview on edit.
+			getRecipientCount()
 		})
 	}
 }
