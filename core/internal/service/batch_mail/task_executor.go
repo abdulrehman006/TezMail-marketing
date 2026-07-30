@@ -166,17 +166,23 @@ func sesAccountHasRunningCampaign(accountName string, excludeTaskId int) (busy b
 		}
 	}()
 
+	// Snapshot the addressers of running tasks under the lock (fast, no I/O),
+	// then resolve SES accounts OUTSIDE the lock — never hold the executors lock
+	// during a DB lookup (would stall executor register/remove).
+	var addressers []string
 	taskExecutorsMutex.RLock()
-	defer taskExecutorsMutex.RUnlock()
 	for id, ex := range taskExecutors {
 		if id == excludeTaskId || ex == nil || !ex.IsRunning() {
 			continue
 		}
-		cfg := ex.taskConfig
-		if cfg == nil {
-			continue
+		if cfg := ex.taskConfig; cfg != nil && cfg.Addresser != "" {
+			addressers = append(addressers, cfg.Addresser)
 		}
-		if acc := safeGetSESAccount(cfg.Addresser); acc != nil && acc.Name == accountName {
+	}
+	taskExecutorsMutex.RUnlock()
+
+	for _, addr := range addressers {
+		if acc := safeGetSESAccount(addr); acc != nil && acc.Name == accountName {
 			return true
 		}
 	}
