@@ -292,6 +292,13 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 		return fmt.Errorf("task %d not found", taskId)
 	}
 
+	// Cache the task config immediately so a running executor's sender/SES account
+	// is visible to the per-account SES serialisation check
+	// (sesAccountHasRunningCampaign). Without this, taskConfig stays nil for
+	// campaigns that are never paused/resumed and the cross-poll gate can't see
+	// them. Reload-on-resume still refreshes it later.
+	e.taskConfig = task
+
 	// check if task should run
 	if task.TaskProcess == 2 { // completed
 		return nil
@@ -622,7 +629,10 @@ func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
 		sesAccount.SendQuota != nil && sesAccount.SendQuota.MaxSendRate > 0 {
 		// 90% of the account's per-second rate as a safety margin → per-minute.
 		sesPerMinute := int(sesAccount.SendQuota.MaxSendRate * 0.9 * 60)
-		if sesPerMinute > 0 && sesPerMinute < maxPerMinute {
+		if sesPerMinute < 1 {
+			sesPerMinute = 1 // never fail-open on an ultra-low SES rate
+		}
+		if sesPerMinute < maxPerMinute {
 			g.Log().Infof(context.Background(),
 				"task %d: SES active — capping send rate to %d/min (SES MaxSendRate %.2f/s)",
 				task.Id, sesPerMinute, sesAccount.SendQuota.MaxSendRate)
