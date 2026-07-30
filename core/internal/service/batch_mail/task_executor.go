@@ -113,12 +113,28 @@ func ProcessEmailTasks(ctx context.Context) {
 
 	//g.Log().Debug(ctx, "Found %d pending email tasks", len(tasks))
 
+	// SES-ONLY: serialise campaigns per SES account (send one campaign at a time
+	// per account) so several concurrent campaigns can't collectively exceed the
+	// account's send rate / daily quota. Tracks accounts started in THIS poll to
+	// avoid the async "not yet running" race. Local-SMTP campaigns are NOT gated.
+	startedSESAccounts := make(map[string]struct{})
+
 	// process each task
 	for _, task := range tasks {
 		// check if task already has executor and is running
 		executor := GetTaskExecutor(task.Id)
 		if executor != nil && executor.IsRunning() {
 			continue // skip running task
+		}
+
+		// SES gate (defensive: any error → nil → not gated, behave as today).
+		if acc := safeGetSESAccount(task.Addresser); acc != nil && acc.Name != "" {
+			if _, startedNow := startedSESAccounts[acc.Name]; startedNow ||
+				sesAccountHasRunningCampaign(acc.Name, task.Id) {
+				g.Log().Infof(ctx, "task %d: SES account %s already sending; deferring to next poll", task.Id, acc.Name)
+				continue // one SES campaign per account at a time
+			}
+			startedSESAccounts[acc.Name] = struct{}{}
 		}
 
 		// create new executor
@@ -133,6 +149,38 @@ func ProcessEmailTasks(ctx context.Context) {
 			}
 		}(task.Id)
 	}
+}
+
+// sesAccountHasRunningCampaign reports whether any currently-running task is
+// sending via the given SES account. Used to serialise SES campaigns per account.
+// Best-effort + defensive: reads cached task config under lock; on any
+// uncertainty (nil config, panic) it returns false so it never blocks sending.
+func sesAccountHasRunningCampaign(accountName string, excludeTaskId int) (busy bool) {
+	if accountName == "" {
+		return false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			g.Log().Warning(context.Background(), "sesAccountHasRunningCampaign recovered:", r)
+			busy = false
+		}
+	}()
+
+	taskExecutorsMutex.RLock()
+	defer taskExecutorsMutex.RUnlock()
+	for id, ex := range taskExecutors {
+		if id == excludeTaskId || ex == nil || !ex.IsRunning() {
+			continue
+		}
+		cfg := ex.taskConfig
+		if cfg == nil {
+			continue
+		}
+		if acc := safeGetSESAccount(cfg.Addresser); acc != nil && acc.Name == accountName {
+			return true
+		}
+	}
+	return false
 }
 
 // TaskExecutor task executor
