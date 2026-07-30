@@ -105,6 +105,7 @@ func init() {
                 sent_time INTEGER NOT NULL DEFAULT 0,
                 message_id TEXT NOT NULL,
                 create_time INTEGER NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+                retry_count INTEGER NOT NULL DEFAULT 0, -- SES throttle/quota deferrals (bounded)
                 FOREIGN KEY (task_id) REFERENCES email_tasks(id) ON DELETE CASCADE,
                 UNIQUE(task_id, recipient)
             )`,
@@ -196,6 +197,8 @@ func init() {
 			`CREATE INDEX IF NOT EXISTS idx_api_mail_logs_api_id ON api_mail_logs (api_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_api_mail_logs_recipient ON api_mail_logs (recipient)`,
 			`CREATE INDEX IF NOT EXISTS idx_api_mail_logs_message_id ON api_mail_logs (message_id)`,
+			// SES throttle/quota bounded-retry counter (idempotent for existing installs).
+			`ALTER TABLE recipient_info ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0`,
 			`CREATE INDEX IF NOT EXISTS idx_recipient_info_task_id ON recipient_info(task_id)`,
 			`CREATE INDEX IF NOT EXISTS idx_recipient_info_is_sent ON recipient_info(is_sent)`,
 			`CREATE INDEX IF NOT EXISTS idx_recipient_info_message_id ON recipient_info(message_id)`,

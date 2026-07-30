@@ -299,6 +299,35 @@ func (e *TaskExecutor) ProcessTask(ctx context.Context) error {
 	// them. Reload-on-resume still refreshes it later.
 	e.taskConfig = task
 
+	// Crash recovery (SES-gated, defensive): at task (re)start THIS run has not
+	// claimed any recipients yet, so rows still marked "claimed" (is_sent=2) are
+	// orphans from a previous crashed/killed run. Reset them to pending so the
+	// task can COMPLETE instead of hanging forever with silently-dropped
+	// recipients. Wrapped so any DB error / panic is logged and we continue — the
+	// task then proceeds exactly as before. (Local-SMTP campaigns are not gated
+	// here, keeping their existing behaviour untouched.)
+	if safeGetSESAccount(task.Addresser) != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					g.Log().Warning(ctx, "crash-recovery reclaim recovered:", r)
+				}
+			}()
+			res, rerr := g.DB().Model("recipient_info").
+				Where("task_id", task.Id).
+				Where("is_sent", 2).
+				Data(g.Map{"is_sent": 0}).
+				Update()
+			if rerr != nil {
+				g.Log().Error(ctx, "task %d: reclaim orphaned recipients failed: %v", task.Id, rerr)
+				return
+			}
+			if n, _ := res.RowsAffected(); n > 0 {
+				g.Log().Warningf(ctx, "task %d: crash-recovery reclaimed %d orphaned recipient(s)", task.Id, n)
+			}
+		}()
+	}
+
 	// check if task should run
 	if task.TaskProcess == 2 { // completed
 		return nil
@@ -612,6 +641,31 @@ func safeGetSESAccount(addresser string) (acc *ses_api.AccountConfig) {
 		return nil
 	}
 	return ses_api.GetAccountForDomain(addresser)
+}
+
+const (
+	// SES throttle/quota deferral: wait before retrying a throttled recipient,
+	// and how many times before giving up (marking it processed) to bound retries.
+	sesThrottleBackoffSeconds = 300 // 5 minutes
+	maxSESThrottleRetries     = 5
+)
+
+// isSESThrottleError reports whether a send error is a transient SES
+// throttle/quota condition worth deferring + retrying rather than dropping.
+// Defensive: nil-safe, never panics. These strings are only produced by the SES
+// path, so it is effectively SES-gated.
+func isSESThrottleError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "throttl") ||
+		strings.Contains(s, "toomanyrequests") ||
+		strings.Contains(s, "too many requests") ||
+		strings.Contains(s, "rate exceeded") ||
+		strings.Contains(s, "exceeded maximum") ||
+		strings.Contains(s, "quota") ||
+		strings.Contains(s, "429")
 }
 
 func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
@@ -1043,6 +1097,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 	successResults := make([]*SendResult, 0, batchSize)
 	failedIDs := make([]int, 0, batchSize)
+	deferIDs := make([]int, 0, batchSize) // SES throttled → defer + bounded retry
 
 	// create ticker to flush results
 	ticker := time.NewTicker(flushInterval)
@@ -1050,7 +1105,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 	// flush function
 	flushUpdates := func() {
-		if len(successResults) == 0 && len(failedIDs) == 0 {
+		if len(successResults) == 0 && len(failedIDs) == 0 && len(deferIDs) == 0 {
 			return
 		}
 
@@ -1125,6 +1180,39 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 			failedIDs = failedIDs[:0]
 		}
+
+		// clear deferred (SES-throttled) records: retry later, bounded. Each of
+		// these is fully defensive — an error is logged and processing continues.
+		if len(deferIDs) > 0 {
+			now := time.Now().Unix()
+			retryAt := now + sesThrottleBackoffSeconds
+
+			// Under the retry cap → reset to pending with backoff + bump the count.
+			if _, err := g.DB().Model("recipient_info").
+				WhereIn("id", deferIDs).
+				Where("is_sent", 2).
+				Where("retry_count < ?", maxSESThrottleRetries).
+				Data(g.Map{
+					"is_sent":     0,
+					"sent_time":   retryAt,
+					"retry_count": gdb.Raw("retry_count + 1"),
+				}).
+				Update(); err != nil {
+				g.Log().Error(ctx, "defer SES-throttled recipients failed: %v", err)
+			}
+
+			// Over the retry cap → give up (mark processed) so it can't loop forever.
+			if _, err := g.DB().Model("recipient_info").
+				WhereIn("id", deferIDs).
+				Where("is_sent", 2).
+				Where("retry_count >= ?", maxSESThrottleRetries).
+				Data(g.Map{"is_sent": 1, "sent_time": now}).
+				Update(); err != nil {
+				g.Log().Error(ctx, "mark over-retry SES recipients failed: %v", err)
+			}
+
+			deferIDs = deferIDs[:0]
+		}
 	}
 
 	// main loop
@@ -1139,6 +1227,11 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 
 			if result.Success {
 				successResults = append(successResults, result)
+			} else if isSESThrottleError(result.Error) {
+				// SES throttle/quota — defer + bounded retry instead of dropping.
+				deferIDs = append(deferIDs, result.RecipientID)
+				g.Log().Warningf(ctx, "recipient %d SES-throttled, deferring for retry: %v",
+					result.RecipientID, result.Error)
 			} else {
 				failedIDs = append(failedIDs, result.RecipientID)
 
@@ -1147,7 +1240,7 @@ func (e *TaskExecutor) processSendResults(ctx context.Context, resultChan <-chan
 			}
 
 			// reach batch processing size, flush
-			if len(successResults)+len(failedIDs) >= batchSize {
+			if len(successResults)+len(failedIDs)+len(deferIDs) >= batchSize {
 				flushUpdates()
 			}
 
