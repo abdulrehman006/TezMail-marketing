@@ -25,6 +25,18 @@ export function getTaskDetails(params: { id: number }) {
 	return instance.get('/batch_mail/task/find', { params })
 }
 
+/**
+ * Preview the de-duplicated recipient count across one or more selected lists.
+ */
+export function recipientPreview(params: {
+	group_ids: number[]
+	group_id: number
+	tag_ids: number[]
+	tag_logic: string
+}) {
+	return instance.post('/batch_mail/task/recipient_preview', params)
+}
+
 interface TaskAddParams {
 	track_open: number
 	track_click: number
@@ -32,6 +44,7 @@ interface TaskAddParams {
 	full_name: string
 	subject: string
 	group_id: number
+	group_ids: number[]
 	template_id: number
 	is_record: number
 	warmup: number

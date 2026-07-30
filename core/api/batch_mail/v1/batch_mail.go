@@ -143,7 +143,8 @@ type CreateTaskReq struct {
 	Subject       string `json:"subject" v:"required" dc:"subject"`
 	FullName      string `json:"full_name" dc:"full name"`
 	TemplateId    int    `json:"template_id" v:"required" dc:"template id"`
-	GroupId       int    `json:"group_id" v:"required" dc:"group id"`
+	GroupId       int    `json:"group_id" v:"required" dc:"group id (primary/first list; kept for backward compatibility)"`
+	GroupIds      []int  `json:"group_ids" dc:"recipient list IDs; when set, the campaign is sent to the de-duplicated union of these lists. Falls back to group_id when empty."`
 	IsRecord      int    `json:"is_record" v:"in:0,1" dc:"is record" default:"1"`
 	Unsubscribe   int    `json:"unsubscribe" v:"in:0,1" dc:"unsubscribe" default:"1"`
 	Threads       int    `json:"threads" v:"min:0" dc:"threads" default:"5"`
@@ -161,6 +162,23 @@ type CreateTaskRes struct {
 	api_v1.StandardRes
 	Data struct {
 		Id int `json:"id" dc:"task id"`
+	} `json:"data"`
+}
+
+// RecipientPreviewReq previews the de-duplicated recipient count across lists.
+type RecipientPreviewReq struct {
+	g.Meta        `path:"/batch_mail/task/recipient_preview" method:"post" tags:"BatchMail" summary:"Preview de-duplicated recipient count across recipient lists"`
+	Authorization string `json:"authorization" dc:"Authorization" in:"header"`
+	GroupId       int    `json:"group_id" dc:"single list id (backward compatible)"`
+	GroupIds      []int  `json:"group_ids" dc:"recipient list ids to union and de-duplicate"`
+	TagIds        []int  `json:"tag_ids" dc:"optional tag filter"`
+	TagLogic      string `json:"tag_logic" v:"in:AND,OR,NOT" dc:"tag logic" default:"AND"`
+}
+
+type RecipientPreviewRes struct {
+	api_v1.StandardRes
+	Data struct {
+		Total int `json:"total" dc:"unique recipient count"`
 	} `json:"data"`
 }
 

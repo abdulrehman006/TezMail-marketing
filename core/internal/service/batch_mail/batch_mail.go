@@ -419,6 +419,106 @@ func GetFilteredContacts(ctx context.Context, filter ContactFilter) ([]*entity.C
 	return contacts, nil
 }
 
+// GetCampaignContacts resolves the de-duplicated recipient set for a campaign
+// across one or more recipient lists (groups). Each list contributes only its
+// active/confirmed contacts (honouring any tag filter); the combined set is
+// then de-duplicated by lower-cased, trimmed email so that a contact present in
+// several selected lists receives the campaign exactly once. Order is stable —
+// the first list a contact appears in wins. Per-list unsubscribe is already
+// handled because GetActiveContacts / GetFilteredContacts only return active
+// contacts, so a contact unsubscribed from one list can still be reached via
+// another list they remain subscribed to (matching standard ESP behaviour).
+func GetCampaignContacts(ctx context.Context, groupIds []int, tagIds []int, tagLogic string) ([]*entity.Contact, error) {
+	all := make([]*entity.Contact, 0)
+
+	for _, gid := range groupIds {
+		if gid <= 0 {
+			continue
+		}
+
+		var contacts []*entity.Contact
+		var err error
+		if len(tagIds) > 0 {
+			contacts, err = GetFilteredContacts(ctx, ContactFilter{GroupId: gid, TagIds: tagIds, TagLogic: tagLogic})
+		} else {
+			contacts, err = GetActiveContacts(ctx, gid)
+		}
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, contacts...)
+	}
+
+	return dedupeContactsByEmail(all), nil
+}
+
+// dedupeContactsByEmail removes duplicate contacts by lower-cased, trimmed email,
+// preserving first-seen order and skipping nil entries / blank emails. This is
+// the core of the multi-list de-duplication guarantee (one email per person).
+func dedupeContactsByEmail(in []*entity.Contact) []*entity.Contact {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]*entity.Contact, 0, len(in))
+	for _, c := range in {
+		if c == nil {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(c.Email))
+		if key == "" {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, c)
+	}
+	return out
+}
+
+// CountCampaignContacts returns the number of UNIQUE recipients a campaign would
+// reach across the given lists (de-duplicated by email) — matching what
+// GetCampaignContacts produces. Used for the pre-create preview count so the UI
+// never double-counts a contact present in several selected lists. The no-tag
+// path uses an efficient COUNT(DISTINCT …) query; the tag path reuses the full
+// resolver for exactness.
+func CountCampaignContacts(ctx context.Context, groupIds []int, tagIds []int, tagLogic string) (int, error) {
+	// Normalise: drop non-positive and duplicate ids.
+	ids := make([]int, 0, len(groupIds))
+	seen := make(map[int]struct{})
+	for _, gid := range groupIds {
+		if gid <= 0 {
+			continue
+		}
+		if _, dup := seen[gid]; dup {
+			continue
+		}
+		seen[gid] = struct{}{}
+		ids = append(ids, gid)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	if len(tagIds) > 0 {
+		contacts, err := GetCampaignContacts(ctx, ids, tagIds, tagLogic)
+		if err != nil {
+			return 0, err
+		}
+		return len(contacts), nil
+	}
+
+	val, err := g.DB().Model("bm_contacts").
+		Fields("COUNT(DISTINCT LOWER(TRIM(email)))").
+		WhereIn("group_id", ids).
+		Where("active", 1).
+		Where("status", 1).
+		Value()
+	if err != nil {
+		return 0, err
+	}
+	return val.Int(), nil
+}
+
 // ============= business logic combination =============
 
 func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addType int) (int, error) {
@@ -431,6 +531,25 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 		var tagIdsJson string
 		if len(req.TagIds) > 0 {
 			tagIdsJson = gconv.String(req.TagIds)
+		}
+
+		// Resolve the recipient list(s). GroupIds (multi-list) takes precedence;
+		// GroupId is included for backward compatibility. Duplicates and
+		// non-positive ids are removed while preserving selection order.
+		effectiveGroupIds := make([]int, 0)
+		seenGroup := make(map[int]struct{})
+		for _, gid := range append(append([]int{}, req.GroupIds...), req.GroupId) {
+			if gid <= 0 {
+				continue
+			}
+			if _, dup := seenGroup[gid]; dup {
+				continue
+			}
+			seenGroup[gid] = struct{}{}
+			effectiveGroupIds = append(effectiveGroupIds, gid)
+		}
+		if len(effectiveGroupIds) == 0 {
+			return gerror.New(public.LangCtx(ctx, "At least one recipient list is required"))
 		}
 
 		res, e := tx.Ctx(ctx).Model("email_tasks").Insert(g.Map{
@@ -453,7 +572,7 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 			"active":          1,
 			"remark":          req.Remark,
 			"add_type":        addType,
-			"group_id":        req.GroupId,
+			"group_id":        effectiveGroupIds[0],
 			"tag_ids":         tagIdsJson,
 			"tag_logic":       req.TagLogic,
 		})
@@ -475,27 +594,18 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 			abnormalMap[ar.Recipient] = ar.Count
 		}
 
-		filter := ContactFilter{GroupId: req.GroupId, TagIds: req.TagIds, TagLogic: req.TagLogic}
+		// Union across the selected list(s), de-duplicated by email so a contact
+		// present in multiple selected lists is sent to exactly once.
 		var contacts []*entity.Contact
-		if len(req.TagIds) > 0 {
-			contacts, err = GetFilteredContacts(ctx, filter)
-			if err != nil {
-				return gerror.New(public.LangCtx(ctx, "Failed to get filtered contacts: {}", err.Error()))
-			}
-		} else {
-			if req.GroupId <= 0 {
-				return gerror.New(public.LangCtx(ctx, "Group ID is required when not using tag filter"))
-			}
-			contacts, err = GetActiveContacts(ctx, req.GroupId)
-			if err != nil {
-				return gerror.New(public.LangCtx(ctx, "Failed to get contacts for group {}: {}", req.GroupId, err.Error()))
-			}
+		contacts, err = GetCampaignContacts(ctx, effectiveGroupIds, req.TagIds, req.TagLogic)
+		if err != nil {
+			return gerror.New(public.LangCtx(ctx, "Failed to get contacts: {}", err.Error()))
 		}
 		if len(contacts) == 0 {
 			if len(req.TagIds) > 0 {
 				return gerror.New(public.LangCtx(ctx, "No contacts found matching the tag filter criteria"))
 			}
-			return gerror.New(public.LangCtx(ctx, "No contacts found in group {}", req.GroupId))
+			return gerror.New(public.LangCtx(ctx, "No contacts found in the selected list(s)"))
 		}
 
 		filteredContacts := make([]*entity.Contact, 0, len(contacts))
