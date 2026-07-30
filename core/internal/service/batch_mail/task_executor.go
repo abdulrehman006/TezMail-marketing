@@ -1140,8 +1140,15 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 		//domain := domains.GetBaseURLBySender(task.Addresser)
 		domain := domains.GetBaseURL()
 
-		var contactGroupId int
-		contactGroupId = task.GroupId
+		// Target the recipient's ACTUAL list for unsubscribe, not the campaign's
+		// primary list. With multi-list campaigns a recipient may be reached via a
+		// non-primary list; `contact` above is resolved to that recipient's own
+		// contact row (with a global-by-email fallback), so its GroupId is the
+		// correct list to unsubscribe from. Falls back to task.GroupId for safety.
+		contactGroupId := task.GroupId
+		if contact.GroupId > 0 {
+			contactGroupId = contact.GroupId
+		}
 
 		jwtToken, err := GenerateUnsubscribeJWT(
 			recipient.Recipient,

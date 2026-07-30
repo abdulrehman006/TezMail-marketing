@@ -25,7 +25,7 @@
 								<n-input v-model:value="form.subject" :placeholder="$t('market.task.edit.subjectPlaceholder')">
 								</n-input>
 							</n-form-item>
-							<n-form-item :label="$t('market.task.edit.recipients')" type="group_ids">
+							<n-form-item :label="$t('market.task.edit.recipients')" path="group_ids">
 								<div class="flex-1">
 									<div class="flex items-center">
 										<group-select multiple v-model:value="form.group_ids" v-model:label="groupName"
@@ -352,6 +352,7 @@ const handleGoBack = () => {
 	}
 }
 
+let previewSeq = 0
 const getRecipientCount = async () => {
 	if (!form.group_ids.length) {
 		recipientsCount.value = 0
@@ -359,14 +360,21 @@ const getRecipientCount = async () => {
 	}
 
 	// Deduplicated union count across all selected lists (matches what will send).
-	const res = await recipientPreview({
-		group_ids: form.group_ids,
-		group_id: form.group_ids[0] || 0,
-		tag_ids: form.tag_ids,
-		tag_logic: form.tag_logic,
-	})
-	if (isObject<{ total: number }>(res)) {
-		recipientsCount.value = res.total
+	// Sequence guard: rapid list/tag changes must not leave a stale count.
+	const seq = ++previewSeq
+	try {
+		const res = await recipientPreview({
+			group_ids: form.group_ids,
+			group_id: form.group_ids[0] || 0,
+			tag_ids: form.tag_ids,
+			tag_logic: form.tag_logic,
+		})
+		if (seq !== previewSeq) return
+		if (isObject<{ total: number }>(res)) {
+			recipientsCount.value = res.total
+		}
+	} catch {
+		if (seq === previewSeq) recipientsCount.value = 0
 	}
 }
 
@@ -451,6 +459,8 @@ const initForm = async () => {
 		form.track_click = res.track_click
 		nextTick(() => {
 			form.tag_ids = res.tag_ids
+			// Reflect the loaded recipients in the count preview on edit.
+			getRecipientCount()
 		})
 	}
 }
