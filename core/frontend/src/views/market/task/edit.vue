@@ -355,6 +355,7 @@ const handleGoBack = () => {
 let previewSeq = 0
 const getRecipientCount = async () => {
 	if (!form.group_ids.length) {
+		previewSeq++ // invalidate any in-flight request so it can't overwrite 0
 		recipientsCount.value = 0
 		return
 	}

@@ -255,6 +255,10 @@ func ImportRecipients(ctx context.Context, taskId int, contacts []*entity.Contac
 				"sent_time":   0,
 				"message_id":  "",
 				"create_time": now,
+				// Source list this recipient was reached through (multi-list):
+				// the de-duplicated first-seen list. Used for correct per-list
+				// unsubscribe + personalization at send time.
+				"group_id": contact.GroupId,
 			}
 		}
 
@@ -303,6 +307,10 @@ func ImportRecipientsTx(ctx context.Context, tx gdb.TX, taskId int, contacts []*
 				"sent_time":   0,
 				"message_id":  "",
 				"create_time": now,
+				// Source list this recipient was reached through (multi-list):
+				// the de-duplicated first-seen list. Used for correct per-list
+				// unsubscribe + personalization at send time.
+				"group_id": contact.GroupId,
 			}
 		}
 		result, err := tx.Ctx(ctx).Model("recipient_info").InsertIgnore(values)
@@ -419,6 +427,14 @@ func GetFilteredContacts(ctx context.Context, filter ContactFilter) ([]*entity.C
 	return contacts, nil
 }
 
+// Upper bounds on multi-list campaign selection — defence-in-depth so a
+// pathological (authenticated) payload can't build an oversized multi-join /
+// union query. Well above any realistic UI selection.
+const (
+	maxCampaignLists = 200
+	maxCampaignTags  = 100
+)
+
 // GetCampaignContacts resolves the de-duplicated recipient set for a campaign
 // across one or more recipient lists (groups). Each list contributes only its
 // active/confirmed contacts (honouring any tag filter); the combined set is
@@ -482,6 +498,9 @@ func dedupeContactsByEmail(in []*entity.Contact) []*entity.Contact {
 // path uses an efficient COUNT(DISTINCT …) query; the tag path reuses the full
 // resolver for exactness.
 func CountCampaignContacts(ctx context.Context, groupIds []int, tagIds []int, tagLogic string) (int, error) {
+	if len(groupIds) > maxCampaignLists || len(tagIds) > maxCampaignTags {
+		return 0, gerror.New("too many lists or tags")
+	}
 	// Normalise: drop non-positive and duplicate ids.
 	ids := make([]int, 0, len(groupIds))
 	seen := make(map[int]struct{})
@@ -550,6 +569,12 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 		}
 		if len(effectiveGroupIds) == 0 {
 			return gerror.New(public.LangCtx(ctx, "At least one recipient list is required"))
+		}
+		if len(effectiveGroupIds) > maxCampaignLists {
+			return gerror.New(public.LangCtx(ctx, "Too many recipient lists selected"))
+		}
+		if len(req.TagIds) > maxCampaignTags {
+			return gerror.New(public.LangCtx(ctx, "Too many tags selected"))
 		}
 
 		res, e := tx.Ctx(ctx).Model("email_tasks").Insert(g.Map{

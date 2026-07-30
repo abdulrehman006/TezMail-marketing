@@ -1110,8 +1110,14 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 	var contact entity.Contact
 	// 优先按任务分组精确匹配，再按创建时间倒序获取最新一条
 	q := g.DB().Model("bm_contacts").Where("email", recipient.Recipient)
-	if task.GroupId > 0 {
-		q = q.Where("group_id", task.GroupId)
+	// Prefer the recipient's actual source list (multi-list) for the exact
+	// contact row; fall back to the task's primary list for legacy rows.
+	lookupGroupId := task.GroupId
+	if recipient.GroupId > 0 {
+		lookupGroupId = recipient.GroupId
+	}
+	if lookupGroupId > 0 {
+		q = q.Where("group_id", lookupGroupId)
 	}
 	if err := q.OrderDesc("create_time").Limit(1).Scan(&contact); err != nil {
 		g.Log().Error(ctx, "get contact info failed: %v", err)
@@ -1140,14 +1146,13 @@ func (e *TaskExecutor) personalizeEmail(ctx context.Context, content string, tas
 		//domain := domains.GetBaseURLBySender(task.Addresser)
 		domain := domains.GetBaseURL()
 
-		// Target the recipient's ACTUAL list for unsubscribe, not the campaign's
-		// primary list. With multi-list campaigns a recipient may be reached via a
-		// non-primary list; `contact` above is resolved to that recipient's own
-		// contact row (with a global-by-email fallback), so its GroupId is the
-		// correct list to unsubscribe from. Falls back to task.GroupId for safety.
+		// Target the recipient's ACTUAL source list for unsubscribe, not the
+		// campaign's primary list. recipient.GroupId is the list this recipient
+		// was reached through, persisted at snapshot time (multi-list). This is
+		// exact — no guessing. Falls back to task.GroupId for legacy rows (0).
 		contactGroupId := task.GroupId
-		if contact.GroupId > 0 {
-			contactGroupId = contact.GroupId
+		if recipient.GroupId > 0 {
+			contactGroupId = recipient.GroupId
 		}
 
 		jwtToken, err := GenerateUnsubscribeJWT(

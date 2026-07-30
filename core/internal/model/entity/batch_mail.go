@@ -133,6 +133,7 @@ type RecipientInfo struct {
 	SentTime   int    `json:"sent_time"   dc:"Send Time"`
 	MessageId  string `json:"message_id"  dc:"Email Message-ID"`
 	CreateTime int    `json:"create_time" dc:"Create Time"`
+	GroupId    int    `json:"group_id"    dc:"Source recipient list (multi-list); 0 = unknown/legacy"`
 }
 
 type AbnormalRecipient struct {
