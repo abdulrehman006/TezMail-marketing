@@ -535,11 +535,47 @@ func (e *TaskExecutor) getTaskIdFromContext(ctx context.Context) (int, error) {
 }
 
 // configureRateController
+// safeGetSESAccount returns the active SES account for a sender's domain, or nil.
+// It NEVER panics: any failure (DB/config error, unexpected panic inside the
+// lookup) degrades to "SES not active", so every SES-gated feature falls back to
+// the existing local-SMTP-compatible behavior. This is the single gate used by
+// all SES-only reliability changes.
+func safeGetSESAccount(addresser string) (acc *ses_api.AccountConfig) {
+	defer func() {
+		if r := recover(); r != nil {
+			g.Log().Warning(context.Background(), "safeGetSESAccount recovered from panic:", r)
+			acc = nil
+		}
+	}()
+	if addresser == "" {
+		return nil
+	}
+	return ses_api.GetAccountForDomain(addresser)
+}
+
 func (e *TaskExecutor) configureRateController(task *entity.EmailTask) {
 	maxPerMinute := task.Threads * 20 * 60
 	if maxPerMinute <= 0 {
 		maxPerMinute = 1000
 	}
+
+	// SES-ONLY, defensive: cap the send rate to the SES account's MaxSendRate so
+	// we never exceed AWS's per-second limit (exceeding it causes 429 throttling
+	// and, today, silently dropped recipients). Applies ONLY when SES is active
+	// for this sender's domain — the local-SMTP/Postfix path is untouched. Any
+	// missing/zero/invalid quota leaves the existing rate unchanged (no-op).
+	if sesAccount := safeGetSESAccount(task.Addresser); sesAccount != nil &&
+		sesAccount.SendQuota != nil && sesAccount.SendQuota.MaxSendRate > 0 {
+		// 90% of the account's per-second rate as a safety margin → per-minute.
+		sesPerMinute := int(sesAccount.SendQuota.MaxSendRate * 0.9 * 60)
+		if sesPerMinute > 0 && sesPerMinute < maxPerMinute {
+			g.Log().Infof(context.Background(),
+				"task %d: SES active — capping send rate to %d/min (SES MaxSendRate %.2f/s)",
+				task.Id, sesPerMinute, sesAccount.SendQuota.MaxSendRate)
+			maxPerMinute = sesPerMinute
+		}
+	}
+
 	g.Log().Info(context.Background(), "task %d: initialize send rate - max %d emails per minute, threads: %d",
 		task.Id, maxPerMinute, task.Threads)
 	e.rateController = NewSimpleRateController(maxPerMinute)
