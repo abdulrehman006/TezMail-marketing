@@ -1506,7 +1506,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 		go func() {
 			nowMillis := time.Now().UnixMilli()
 			cleanMessageID := strings.Trim(messageID, "<>")
-			sesPostfixID := "ses-fail-" + fmt.Sprintf("%d", nowMillis)
+			sesPostfixID := "api-fail-" + fmt.Sprintf("%d", nowMillis)
 
 			// Insert into mailstat_message_ids
 			_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
@@ -1529,14 +1529,10 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 				g.Log().Warning(ctx, "Failed to insert SES failure sender stats:", err)
 			}
 
-			// Insert into mailstat_send_mails with status 'bounced'
-			errorDesc := "SES API error"
-			if result.Error != nil {
-				errorDesc = result.Error.Error()
-				if len(errorDesc) > 200 {
-					errorDesc = errorDesc[:200]
-				}
-			}
+			// Insert into mailstat_send_mails with status 'bounced'.
+			// White-label: store a generic, provider-agnostic reason in the
+			// client-visible log; the full technical error is in the server logs above.
+			errorDesc := "Delivery failed"
 			_, err = g.DB().Model("mailstat_send_mails").InsertIgnore(g.Map{
 				"postfix_message_id": sesPostfixID,
 				"recipient":          recipient.Recipient,
@@ -1545,7 +1541,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 				"delay":              0,
 				"delays":             "0/0/0/0",
 				"dsn":                "5.0.0",
-				"relay":              "ses-api[" + accountName + "]",
+				"relay":              "mail-api",
 				"description":        errorDesc,
 				"log_time_millis":    nowMillis,
 			})
@@ -1571,7 +1567,7 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 
 		// Insert into mailstat_message_ids to map message_id
 		// Use SES message ID as postfix_message_id since there's no Postfix involved
-		sesPostfixID := "ses-" + result.MessageID
+		sesPostfixID := "api-" + result.MessageID
 		_, err := g.DB().Model("mailstat_message_ids").InsertIgnore(g.Map{
 			"postfix_message_id": sesPostfixID,
 			"message_id":         cleanMessageID,
@@ -1601,8 +1597,8 @@ func (e *TaskExecutor) sendEmailViaSESApi(ctx context.Context, task *entity.Emai
 			"delay":              0,
 			"delays":             "0/0/0/0",
 			"dsn":                "2.0.0",
-			"relay":              "ses-api[" + accountName + "]",
-			"description":        "Delivered via Amazon SES API",
+			"relay":              "mail-api",
+			"description":        "Delivered",
 			"log_time_millis":    nowMillis,
 		})
 		if err != nil {

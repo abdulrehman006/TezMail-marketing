@@ -100,13 +100,16 @@ func (c *ControllerV1) SendTestEmail(ctx context.Context, req *v1.SendTestEmailR
 		sent, sesErr := sendTestEmailViaSES(ctx, req.Addresser, req.Recipient, subject, content)
 		if sent {
 			if sesErr != nil {
-				res.SetError(gerror.New(public.LangCtx(ctx, "send test email via SES to {} failed: {}", req.Recipient, sesErr.Error())))
+				// Keep the upstream/technical detail in the server logs only; show the
+				// client a generic, white-labelled message (never name the mail provider).
+				g.Log().Warning(ctx, "test email send failed for", req.Recipient, ":", sesErr)
+				res.SetError(gerror.New(public.LangCtx(ctx, "failed to send test email to {}, please verify the address and try again", req.Recipient)))
 				err = sesErr
 				return
 			}
 			_ = public.WriteLog(ctx, public.LogParams{
 				Type: consts.LOGTYPE.Task,
-				Log:  "Send test email (SES) :" + subject + " to " + req.Recipient + " successfully",
+				Log:  "Send test email :" + subject + " to " + req.Recipient + " successfully",
 			})
 			res.SetSuccess(public.LangCtx(ctx, "send email successfully"))
 			return
@@ -164,7 +167,7 @@ func sendTestEmailViaSES(ctx context.Context, addresser, recipient, subject, con
 		HtmlBody: content,
 	})
 	if result == nil {
-		return true, gerror.New("SES returned no result")
+		return true, gerror.New("no response from email service")
 	}
 	if !result.Success {
 		return true, result.Error
