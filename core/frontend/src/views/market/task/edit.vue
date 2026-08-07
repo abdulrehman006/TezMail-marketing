@@ -447,7 +447,8 @@ const initForm = async () => {
 		form.addresser = res.addresser
 		form.full_name = res.full_name
 		form.subject = res.subject
-		form.group_ids = res.group_id ? [res.group_id] : []
+		// Multi-list: restore all selected lists; fall back to the single legacy id.
+		form.group_ids = (res.group_ids && res.group_ids.length) ? res.group_ids : (res.group_id ? [res.group_id] : [])
 		// form.group_id = res.etypes.split(',').map(item => Number(item))
 		form.template_id = res.template_id
 		form.is_record = res.is_record

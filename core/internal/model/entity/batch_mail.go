@@ -86,6 +86,8 @@ type EmailTask struct {
 	DeferredCount   int    `json:"deferredCount"    description:""`
 	StatsUpdateTime int    `json:"statsUpdateTime"  description:""`
 	GroupId         int    `json:"group_id"        dc:"Group ID"`
+	GroupIdsRaw     string `json:"-"               dc:"Group IDs (JSON string - internal use, multi-list)" orm:"group_ids"`
+	GroupIds        []int  `json:"group_ids"       dc:"Group IDs (parsed array, multi-list)"`
 	TagIdsRaw       string `json:"-"               dc:"Tag IDs (JSON string - internal use)" orm:"tag_ids"`
 	TagIds          []int  `json:"tag_ids"         dc:"Tag IDs (parsed array)"`
 	TagLogic        string `json:"tag_logic"       dc:"Tag Logic (AND/OR/NOT)"`
@@ -111,6 +113,15 @@ func (e *EmailTask) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	// Parse GroupIdsRaw to GroupIds if not already parsed (multi-list)
+	if e.GroupIdsRaw != "" && len(e.GroupIds) == 0 {
+		var groupIds []int
+		err := json.Unmarshal([]byte(e.GroupIdsRaw), &groupIds)
+		if err == nil {
+			aux.GroupIds = groupIds
+		}
+	}
+
 	return json.Marshal(aux)
 }
 
@@ -121,6 +132,13 @@ func (e *EmailTask) AfterFind() {
 		err := json.Unmarshal([]byte(e.TagIdsRaw), &tagIds)
 		if err == nil {
 			e.TagIds = tagIds
+		}
+	}
+	if e.GroupIdsRaw != "" {
+		var groupIds []int
+		err := json.Unmarshal([]byte(e.GroupIdsRaw), &groupIds)
+		if err == nil {
+			e.GroupIds = groupIds
 		}
 	}
 }

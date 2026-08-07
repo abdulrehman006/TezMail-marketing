@@ -78,7 +78,7 @@ func GetTasksWithPage(ctx context.Context, page, pageSize int, keyword string, s
 	// pagination query - include tag_ids field and map it to TagIdsRaw
 	list = make([]*v1.EmailTask, 0)
 	err = model.Page(page, pageSize).
-		Fields("*, tag_ids as TagIdsRaw").
+		Fields("*, tag_ids as TagIdsRaw, group_ids as GroupIdsRaw").
 		Order("create_time DESC").
 		Scan(&list)
 
@@ -598,6 +598,7 @@ func CreateTaskWithRecipients(ctx context.Context, req *v1.CreateTaskReq, addTyp
 			"remark":          req.Remark,
 			"add_type":        addType,
 			"group_id":        effectiveGroupIds[0],
+			"group_ids":       gconv.String(effectiveGroupIds),
 			"tag_ids":         tagIdsJson,
 			"tag_logic":       req.TagLogic,
 		})
@@ -700,7 +701,7 @@ func GetTaskInfo(ctx context.Context, taskId int) (*entity.EmailTask, error) {
 	var task entity.EmailTask
 	err := g.DB().Model("email_tasks").
 		Where("id", taskId).
-		Fields("*, tag_ids as TagIdsRaw").
+		Fields("*, tag_ids as TagIdsRaw, group_ids as GroupIdsRaw").
 		Scan(&task)
 
 	if err != nil {
@@ -917,6 +918,29 @@ func GetTaskTagIds(tagIdsStr string) []int {
 	}
 
 	return tagIds
+}
+
+// GetTaskGroupIds get recipient-list IDs from a task's group_ids field (JSON array).
+// Multi-list: returns the full selected list. Empty or invalid input yields an
+// empty slice (never panics) so callers can safely fall back to the single group_id.
+func GetTaskGroupIds(groupIdsStr string) []int {
+	if groupIdsStr == "" {
+		return []int{}
+	}
+
+	var groupIds []int
+	if err := gconv.Scan(groupIdsStr, &groupIds); err != nil {
+		g.Log().Warningf(context.Background(), "Failed to parse group_ids: %s, error: %v", groupIdsStr, err)
+		return []int{}
+	}
+
+	// gconv.Scan can leave the slice nil for unparseable input without erroring;
+	// guarantee a non-nil empty slice so callers never handle nil specially.
+	if groupIds == nil {
+		return []int{}
+	}
+
+	return groupIds
 }
 
 // extractDomainFromEmail extracts the domain part from an email address

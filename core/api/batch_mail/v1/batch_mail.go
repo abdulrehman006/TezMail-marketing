@@ -47,6 +47,7 @@ type EmailTask struct {
 	UseTagFilter            int       `json:"use_tag_filter" dc:"Whether to use tag filter (1: yes, 0: no)"`
 	TagLogic                string    `json:"tag_logic" dc:"Tag logic (AND: must have all tags, OR: have any tag, NOT)"`
 	TagIdsRaw               string    `json:"-"              dc:"Tag IDs raw data for internal processing"`
+	GroupIdsRaw             string    `json:"-"              dc:"Group IDs raw data for internal processing (multi-list)"`
 }
 
 type GroupInfo struct {

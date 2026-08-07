@@ -5,6 +5,8 @@ import (
 	"billionmail-core/internal/service/batch_mail"
 	"billionmail-core/internal/service/public"
 	"context"
+	"strings"
+
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 )
@@ -27,9 +29,9 @@ func (c *ControllerV1) ListTasks(ctx context.Context, req *v1.ListTasksReq) (res
 	allGroupIds := make(map[int]bool)
 
 	for _, task := range tasks {
-		// Collect group IDs
-		if task.GroupId > 0 {
-			allGroupIds[task.GroupId] = true
+		// Collect group IDs (multi-list selection, or the single legacy id)
+		for _, gid := range taskGroupIds(task) {
+			allGroupIds[gid] = true
 		}
 
 		// Collect tag IDs from TagIdsRaw field
@@ -85,10 +87,15 @@ func (c *ControllerV1) ListTasks(ctx context.Context, req *v1.ListTasksReq) (res
 			EmailTask: *task,
 		}
 
-		// Set group name
-		if groupName, exists := groupNameMap[task.GroupId]; exists {
-			detail.GroupName = groupName
+		// Set group name(s): all selected lists for multi-list, or the single one.
+		gids := taskGroupIds(task)
+		names := make([]string, 0, len(gids))
+		for _, gid := range gids {
+			if name, ok := groupNameMap[gid]; ok && name != "" {
+				names = append(names, name)
+			}
 		}
+		detail.GroupName = strings.Join(names, ", ")
 
 		// Load and populate tags for this task
 		if task.TagIdsRaw != "" {
@@ -148,4 +155,19 @@ func (c *ControllerV1) ListTasks(ctx context.Context, req *v1.ListTasksReq) (res
 	res.Data.List = task_list
 	res.SetSuccess(public.LangCtx(ctx, "Task list retrieved successfully"))
 	return
+}
+
+// taskGroupIds returns all recipient-list ids for a task: the multi-list
+// selection when present, otherwise the single legacy group_id. Never nil-derefs.
+func taskGroupIds(task *v1.EmailTask) []int {
+	if task == nil {
+		return nil
+	}
+	if ids := batch_mail.GetTaskGroupIds(task.GroupIdsRaw); len(ids) > 0 {
+		return ids
+	}
+	if task.GroupId > 0 {
+		return []int{task.GroupId}
+	}
+	return nil
 }

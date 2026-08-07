@@ -28,6 +28,7 @@ export interface Task {
 	error_count: number
 	estimated_time_with_warmup: number
 	group_id: number
+	group_ids?: number[]
 	group_name: string
 	tag_ids: number[]
 	tag_logic: string

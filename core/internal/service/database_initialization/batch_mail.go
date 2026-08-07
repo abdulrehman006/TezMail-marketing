@@ -93,6 +93,7 @@ func init() {
 				group_id INTEGER NOT NULL DEFAULT 0,   
 				stats_update_time INTEGER NOT NULL DEFAULT 0,
 				tag_ids TEXT DEFAULT '', -- JSON array of tag ids for filtering contacts
+				group_ids TEXT DEFAULT '', -- JSON array of recipient list ids (multi-list)
 				tag_logic VARCHAR(10) DEFAULT 'AND' -- Tag logic (AND: must have all tags, OR: have any tag)
     
             )`,
@@ -262,6 +263,8 @@ func init() {
 		_ = AddColumnIfNotExists("email_tasks", "stats_update_time", "INTEGER", "0", true)
 		_ = AddColumnIfNotExists("email_tasks", "group_id", "INTEGER", "0", true)
 		_ = AddColumnIfNotExists("email_tasks", "tag_ids", "TEXT", "''", false)
+		// Multi-list: full recipient-list selection stored as JSON (non-fatal, idempotent).
+		_ = AddColumnIfNotExists("email_tasks", "group_ids", "TEXT", "''", false)
 		_ = AddColumnIfNotExists("email_tasks", "tag_logic", "VARCHAR(10)", "'AND'", false)
 
 		//api_templates
